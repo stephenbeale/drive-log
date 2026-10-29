@@ -52,6 +52,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 10px 14px; font-weight: 600; }
 button:disabled { opacity: .5; cursor: default; }
 .btn-primary { background: var(--sign); color: var(--sign-ink); border-color: var(--sign); }
+a.btn { display: block; text-align: center; text-decoration: none; border-radius: 8px; border: 1px solid var(--sign); padding: 12px 14px; font-weight: 600; }
 .btn-big { padding: 15px 16px; font-size: 1.05rem; width: 100%; }
 .btn-danger { color: var(--bad); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); padding: 6px 8px; }
@@ -221,7 +222,7 @@ const DEFAULT_CAR = { name: "My car", fuel: "Petrol", mpg: 45, ppl: 136.9, holid
 const state = {
   tab: "drive", detailId: null, editing: false, confirmDel: false, confirmDiscard: false, ending: false,
   car: { ...DEFAULT_CAR }, trips: [], active: null, mode: "loading",
-  gps: "off", gpsSpeed: null, routeFilter: null, shareTrim: true,
+  gps: "off", gpsSpeed: null, routeFilter: null, shareTrim: true, showTimer: false,
 };
 
 /* ---------- helpers ---------- */
@@ -582,7 +583,7 @@ function resumeActive() {
 function stopLive() {
   clearInterval(tick); tick = null;
   if (watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
-  watchId = null; lastPos = null; lowSince = highSince = stillSince = movingSince = null; state.offer = state.dismissed = null; state.gps = "off"; state.gpsSpeed = null;
+  watchId = null; lastPos = null; lowSince = highSince = stillSince = movingSince = null; state.offer = state.dismissed = null; state.gps = "off"; state.gpsSpeed = null; state.showTimer = false;
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
 }
 async function keepAwake() {
@@ -606,7 +607,9 @@ function onPos(p) {
   let mph = speed != null && speed >= 0 ? speed * 2.23694 : null;
   if (lastPos) {
     const d = haversineMiles(lastPos, here), dt = (here.t - lastPos.t) / 1000;
-    if (d > 0.004 && d < 3 && !openBreak()) a.gpsMiles = (a.gpsMiles || 0) + d;
+    // A long gap means the page was in the background (music or maps in front): keep the straight-line
+    // distance across it if the speed is believable, rather than dropping it as a GPS glitch.
+    if (d > 0.004 && (d < 3 || (dt > 0 && d / (dt / 3600) < 100)) && !openBreak()) a.gpsMiles = (a.gpsMiles || 0) + d;
     if (mph == null && dt > 0) mph = d / (dt / 3600);
   }
   lastPos = here; a.lastLat = lat; a.lastLon = lon;
@@ -761,6 +764,16 @@ async function resolveDest(a) {
     if (r && Number.isFinite(r.lat) && Number.isFinite(r.lon) && state.active === a) { a.destCoords = { lat: r.lat, lon: r.lon, exact: false }; store.saveActive(false); }
   } catch {}
 }
+// Directions to where this drive is going, in Apple Maps on an iPhone or iPad and Google Maps elsewhere; each opens its app if installed.
+// Only a real location is used (where this destination's past drives ended, or a postcode): a nickname like "School" would send Maps astray.
+function navLink(a) {
+  const to = (a.to || "").trim(), key = to.toLowerCase(), pc = ((to.match(/\(([^)]+)\)\s*$/) || [])[1] || to).trim();
+  const d = a.destCoords || (key && state.trips.find((t) => (t.to || "").trim().toLowerCase() === key && t.endCoords)?.endCoords);
+  const dest = d ? `${d.lat},${d.lon}` : POSTCODE.test(pc) ? tidyPostcode(pc) : null;
+  if (!dest) return null;
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+    ? `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}&dirflg=d` : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}&travelmode=driving`;
+}
 function renderOffer(a) {
   if (state.offer === "arrive") return `<section class="offer" aria-live="polite">
     <h2>Looks like you've arrived${a.to ? " at " + esc(a.to) : ""}</h2>
@@ -851,9 +864,9 @@ function timelineInner(t, st) {
   const seg = (x, cls) => { const l = ((x.start - t.startedAt) / span) * 100, w = (((x.end || st.end) - x.start) / span) * 100; return `<span class="${cls}" style="left:${l.toFixed(2)}%;width:${Math.max(w, 0.6).toFixed(2)}%"></span>`; };
   return (t.slow || []).map((s) => seg(s, "s")).join("") + (t.breaks || []).map((b) => seg(b, "b")).join("");
 }
-function timeline(t, st) {
+function timeline(t, st, showTimes = true) {
   return `<div class="tl" ${t.endedAt ? "" : 'id="liveTl"'} role="img" aria-label="Journey timeline: ${esc(fmtDur(st.slow))} slow, ${esc(fmtDur(st.brk))} stopped">${timelineInner(t, st)}</div>
-  <div class="tl-legend"><span><i style="background:color-mix(in srgb, var(--sign) 22%, var(--bg))"></i>Moving</span><span><i style="background:var(--amber-fill)"></i>Slow</span><span><i style="background:var(--brk)"></i>Stopped / break</span><span class="num">${fmtTime(t.startedAt)} – ${t.endedAt ? fmtTime(t.endedAt) : "now"}</span></div>`;
+  <div class="tl-legend"><span><i style="background:color-mix(in srgb, var(--sign) 22%, var(--bg))"></i>Moving</span><span><i style="background:var(--amber-fill)"></i>Slow</span><span><i style="background:var(--brk)"></i>Stopped / break</span>${showTimes ? `<span class="num">${fmtTime(t.startedAt)} – ${t.endedAt ? fmtTime(t.endedAt) : "now"}</span>` : ""}</div>`;
 }
 function places() {
   const set = new Set(); state.trips.forEach((t) => { t.from && set.add(t.from.trim()); t.to && set.add(t.to.trim()); });
@@ -894,7 +907,7 @@ function renderDrive() {
     <section class="panel">
       <h2>How it works</h2>
       <div class="muted" style="display:grid;gap:6px">
-        <div>Start the drive before you set off, then leave the phone in its mount. The clock keeps running if you switch apps or reload the page.</div>
+        <div>Start the drive before you set off, then switch to your music or maps app. The timer is hidden while you drive so it doesn't draw your eye, and it keeps running if you switch apps or reload the page.</div>
         <div>With location on, slow traffic, long stops and your arrival are spotted for you. Once you've stopped, it offers to log a break or end the journey. Breaks don't count as driving time.</div>
         <div><b>Never use the phone while you're driving.</b> A passenger can log slow points and their causes, or you can add them after the drive.</div>
         <div>Finish with the distance, or snap the mileage on the dashboard at the start and end, and the fuel cost is worked out from your car's MPG.</div>
@@ -903,22 +916,32 @@ function renderDrive() {
   }
   const st = stats(a), s = openSlow(), b = openBreak();
   const lastSlow = s || a.slow[a.slow.length - 1];
-  const status = s ? `<span class="state-chip slow">Slow for <span id="slowFor" class="num">${fmtDur(Date.now() - s.start)}</span></span>` : b ? `<span class="state-chip brk">On a break</span>` : `<span class="state-chip">Driving</span>`;
+  // A ticking clock pulls the driver's eyes to the phone, so times stay hidden unless a passenger asks or the car is parked.
+  const showTimer = state.showTimer || b || state.ending || state.offer;
+  const status = s ? `<span class="state-chip slow">Slow${showTimer ? ` for <span id="slowFor" class="num">${fmtDur(Date.now() - s.start)}</span>` : ""}</span>` : b ? `<span class="state-chip brk">On a break</span>` : `<span class="state-chip">Driving</span>`;
   return `<section class="sign" aria-label="Current drive">
     <div class="sign-in">
       <div class="sign-route"><span>${esc(a.from || "Start")}</span><span class="arrow">→</span><span>${esc(a.to || "Somewhere")}</span></div>
       ${status}
-      <div class="clock" id="liveClock">${fmtClock(st.total)}</div>
-      ${a.expect ? `<div class="sign-eta">${esc(a.expect.text)} · arrive about <b class="num">${fmtTime(a.startedAt + a.expect.ms + st.brk)}</b></div>` : ""}
-      <div class="sign-stats">
+      ${showTimer ? `<div class="clock" id="liveClock">${fmtClock(st.total)}</div>` : ""}
+      ${showTimer && a.expect ? `<div class="sign-eta">${esc(a.expect.text)} · arrive about <b class="num">${fmtTime(a.startedAt + a.expect.ms + st.brk)}</b></div>` : ""}
+      ${showTimer ? `<div class="sign-stats">
         <span><span class="label">Moving</span> <b id="liveMoving">${fmtDur(st.moving)}</b></span>
         <span><span class="label">Slow</span> <b id="liveSlow">${fmtDur(st.slow)}</b></span>
         <span><span class="label">Dist</span> <b id="liveMiles">${a.gpsMiles ? a.gpsMiles.toFixed(1) + " mi" : "–"}</b></span>
         <span><span class="label">Speed</span> <b id="liveSpeed">${state.gpsSpeed != null ? Math.round(state.gpsSpeed) + " mph" : "–"}</b></span>
         <span><span class="label">Fuel so far</span> <b id="liveCost">${st.cost != null ? fmtMoney(st.cost) : "–"}</b></span>
-      </div>
+      </div>` : ""}
     </div>
   </section>
+  ${showTimer ? "" : `<section class="offer eyes">
+    <h2>Eyes on the road</h2>
+    <div class="muted">Switch to your music or maps app now. Drive Log keeps timing while you're away, and catches up on distance when you come back to it.</div>
+    ${navLink(a) ? `<a class="btn btn-primary" href="${esc(navLink(a))}" target="_blank" rel="noopener">Open directions${a.to ? " to " + esc(a.to) : ""} in Maps</a><div class="hint">Do this before you pull away.</div>` : ""}
+    <div class="hint">While another app is in front, Drive Log may not spot stops or slow traffic.</div>
+    <button class="btn-ghost" data-act="show-timer" style="justify-self:start">Show the timer (passenger)</button>
+  </section>`}
+  ${state.showTimer && !b ? `<button class="btn-ghost" data-act="hide-timer" style="justify-self:start">Hide the timer</button>` : ""}
   ${renderOffer(a)}
   <span class="label">For a passenger, or once you're parked</span>
   <div class="controls">
@@ -930,7 +953,7 @@ function renderDrive() {
     <div class="chips">${REASONS.map((r) => `<button class="chip ${lastSlow.reason === r ? "on" : ""}" data-act="reason" data-r="${r}">${r}</button>`).join("")}</div>
   </section>` : ""}
   <section class="panel" style="gap:10px">
-    ${timeline(a, st)}
+    ${timeline(a, st, showTimer)}
     <div class="gps-line"><span class="dot ${state.gps === "on" ? "on" : ""}" id="gpsDot"></span><span id="gpsText">${gpsText()}</span></div>
     ${state.gps === "on" && a.recordRoute ? `<div class="hint">Recording your route for the map.</div>` : ""}
     ${state.gps === "on" ? `<label style="display:flex;gap:8px;align-items:center;font-size:.85rem"><input type="checkbox" id="autoSlow" style="width:auto" ${a.autoSlow ? "checked" : ""}> Mark slow points automatically (under 12 mph for a minute)</label>` : ""}
@@ -1187,6 +1210,8 @@ document.addEventListener("click", async (e) => {
       msg.className = "hint"; msg.textContent = "Looking up " + tidyPostcode(pc) + "…";
       const name = await placeName({ postcode: pc }); $("#from").value = name || tidyPostcode(pc); $("#pcBox").hidden = true;
       msg.textContent = name && name !== tidyPostcode(pc) ? "Named from the postcode. Edit it if you like." : "Postcode added. Type a name for it if you like."; break; }
+    case "show-timer": state.showTimer = true; render(); break;
+    case "hide-timer": state.showTimer = false; render(); break;
     case "slow": toggleSlow(); break;
     case "break": toggleBreak(); break;
     case "reason": setReason(el.dataset.r); break;
