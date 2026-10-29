@@ -867,9 +867,9 @@ function timelineInner(t, st) {
   const seg = (x, cls) => { const l = ((x.start - t.startedAt) / span) * 100, w = (((x.end || st.end) - x.start) / span) * 100; return `<span class="${cls}" style="left:${l.toFixed(2)}%;width:${Math.max(w, 0.6).toFixed(2)}%"></span>`; };
   return (t.slow || []).map((s) => seg(s, "s")).join("") + (t.breaks || []).map((b) => seg(b, "b")).join("");
 }
-function timeline(t, st) {
+function timeline(t, st, showTimes = true) {
   return `<div class="tl" ${t.endedAt ? "" : 'id="liveTl"'} role="img" aria-label="Journey timeline: ${esc(fmtDur(st.slow))} slow, ${esc(fmtDur(st.brk))} stopped">${timelineInner(t, st)}</div>
-  <div class="tl-legend"><span><i style="background:color-mix(in srgb, var(--sign) 22%, var(--bg))"></i>Moving</span><span><i style="background:var(--amber-fill)"></i>Slow</span><span><i style="background:var(--brk)"></i>Stopped / break</span><span class="num">${fmtTime(t.startedAt)} – ${t.endedAt ? fmtTime(t.endedAt) : "now"}</span></div>`;
+  <div class="tl-legend"><span><i style="background:color-mix(in srgb, var(--sign) 22%, var(--bg))"></i>Moving</span><span><i style="background:var(--amber-fill)"></i>Slow</span><span><i style="background:var(--brk)"></i>Stopped / break</span>${showTimes ? `<span class="num">${fmtTime(t.startedAt)} – ${t.endedAt ? fmtTime(t.endedAt) : "now"}</span>` : ""}</div>`;
 }
 function places() {
   const set = new Set(); state.trips.forEach((t) => { t.from && set.add(t.from.trim()); t.to && set.add(t.to.trim()); });
@@ -919,15 +919,15 @@ function renderDrive() {
   }
   const st = stats(a), s = openSlow(), b = openBreak();
   const lastSlow = s || a.slow[a.slow.length - 1];
-  const status = s ? `<span class="state-chip slow">Slow for <span id="slowFor" class="num">${fmtDur(Date.now() - s.start)}</span></span>` : b ? `<span class="state-chip brk">On a break</span>` : `<span class="state-chip">Driving</span>`;
-  // A ticking clock pulls the driver's eyes to the phone, so it stays hidden unless a passenger asks or the car is parked.
+  // A ticking clock pulls the driver's eyes to the phone, so times stay hidden unless a passenger asks or the car is parked.
   const showTimer = state.showTimer || b || state.ending || state.offer;
+  const status = s ? `<span class="state-chip slow">Slow${showTimer ? ` for <span id="slowFor" class="num">${fmtDur(Date.now() - s.start)}</span>` : ""}</span>` : b ? `<span class="state-chip brk">On a break</span>` : `<span class="state-chip">Driving</span>`;
   return `<section class="sign" aria-label="Current drive">
     <div class="sign-in">
       <div class="sign-route"><span>${esc(a.from || "Start")}</span><span class="arrow">→</span><span>${esc(a.to || "Somewhere")}</span></div>
       ${status}
-      ${showTimer ? `<div class="clock" id="liveClock">${fmtClock(st.total)}</div>` : `<div class="sign-eta">Started <b class="num">${fmtTime(a.startedAt)}</b></div>`}
-      ${a.expect ? `<div class="sign-eta">${esc(a.expect.text)} · arrive about <b class="num">${fmtTime(a.startedAt + a.expect.ms + st.brk)}</b></div>` : ""}
+      ${showTimer ? `<div class="clock" id="liveClock">${fmtClock(st.total)}</div>` : ""}
+      ${showTimer && a.expect ? `<div class="sign-eta">${esc(a.expect.text)} · arrive about <b class="num">${fmtTime(a.startedAt + a.expect.ms + st.brk)}</b></div>` : ""}
       ${showTimer ? `<div class="sign-stats">
         <span><span class="label">Moving</span> <b id="liveMoving">${fmtDur(st.moving)}</b></span>
         <span><span class="label">Slow</span> <b id="liveSlow">${fmtDur(st.slow)}</b></span>
@@ -955,7 +955,7 @@ function renderDrive() {
     <div class="chips">${REASONS.map((r) => `<button class="chip ${lastSlow.reason === r ? "on" : ""}" data-act="reason" data-r="${r}">${r}</button>`).join("")}</div>
   </section>` : ""}
   <section class="panel" style="gap:10px">
-    ${timeline(a, st)}
+    ${timeline(a, st, showTimer)}
     <div class="gps-line"><span class="dot ${state.gps === "on" ? "on" : ""}" id="gpsDot"></span><span id="gpsText">${gpsText()}</span></div>
     ${state.gps === "on" && a.recordRoute ? `<div class="hint">Recording your route for the map.</div>` : ""}
     ${state.gps === "on" ? `<label style="display:flex;gap:8px;align-items:center;font-size:.85rem"><input type="checkbox" id="autoSlow" style="width:auto" ${a.autoSlow ? "checked" : ""}> Mark slow points automatically (under 12 mph for a minute)</label>` : ""}
