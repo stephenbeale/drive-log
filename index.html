@@ -1,0 +1,1255 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f4c8f">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Drive Log</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Overpass+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one narrow column like a dashboard-mounted phone; a motorway-sign panel for the live drive; bottom tab bar. */
+:root {
+  --bg: #eceff3; --surface: #ffffff; --ink: #142030; --muted: #586677; --line: #d3dae3;
+  --sign: #1f4c8f; --sign-ink: #ffffff; --sign-line: rgba(255,255,255,.85);
+  --amber: #b97400; --amber-fill: #f2a516; --amber-soft: #fcefd3;
+  --brk: #8a96a6; --good: #2d7a4c; --bad: #b8402b;
+  --f-display: "Overpass", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Overpass", "Segoe UI", system-ui, sans-serif;
+  --f-num: "Overpass Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e141b; --surface: #17202a; --ink: #e6ebf1; --muted: #93a0b0; --line: #29343f;
+  --sign: #2a5ca6; --sign-ink: #ffffff; --sign-line: rgba(255,255,255,.75);
+  --amber: #f3b23f; --amber-fill: #e89d17; --amber-soft: #3a2b10;
+  --brk: #5d6a79; --good: #5fbf86; --bad: #e57a62; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0e141b; --surface: #17202a; --ink: #e6ebf1; --muted: #93a0b0; --line: #29343f;
+  --sign: #2a5ca6; --sign-ink: #ffffff; --sign-line: rgba(255,255,255,.75);
+  --amber: #f3b23f; --amber-fill: #e89d17; --amber-soft: #3a2b10;
+  --brk: #5d6a79; --good: #5fbf86; --bad: #e57a62; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45; }
+.wrap { max-width: 560px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 18px 110px; display: grid; gap: 18px; }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; line-height: 1.15; }
+h1 { font-size: 1.55rem; font-weight: 800; letter-spacing: -.01em; }
+h2 { font-size: 1.1rem; font-weight: 700; }
+.num { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.store-pill { font-size: .72rem; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 14px; min-width: 0; }
+.field { display: grid; gap: 5px; min-width: 0; }
+.field label { font-size: .8rem; font-weight: 600; color: var(--muted); }
+input, select, textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 10px 11px; width: 100%; min-width: 0; }
+textarea { resize: vertical; min-height: 64px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--sign); outline-offset: 2px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.ft { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: end; }
+@media (max-width: 380px) { .row3 { grid-template-columns: 1fr 1fr; } }
+
+button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 10px 14px; font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+.btn-primary { background: var(--sign); color: var(--sign-ink); border-color: var(--sign); }
+.btn-big { padding: 15px 16px; font-size: 1.05rem; width: 100%; }
+.btn-danger { color: var(--bad); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--muted); padding: 6px 8px; }
+.btn-icon { padding: 9px 11px; }
+
+/* Live drive: motorway sign */
+.sign { background: var(--sign); color: var(--sign-ink); border-radius: 12px; padding: 6px; }
+.sign-in { border: 2px solid var(--sign-line); border-radius: 8px; padding: 16px 16px 14px; display: grid; gap: 10px; }
+.sign-route { font-family: var(--f-display); font-weight: 700; font-size: 1.2rem; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.sign-route .arrow { opacity: .8; }
+.clock { font-family: var(--f-num); font-weight: 600; font-size: clamp(2.8rem, 15vw, 4.2rem); line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.sign-stats { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .9rem; }
+.sign-stats b { font-family: var(--f-num); font-weight: 600; }
+.sign .label { color: var(--sign-ink); opacity: .8; }
+.state-chip { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; padding: 3px 9px; border-radius: 4px; background: rgba(255,255,255,.16); width: fit-content; }
+.state-chip.slow { background: var(--amber-fill); color: #1b1300; }
+.state-chip.brk { background: rgba(255,255,255,.3); }
+
+.controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn-slow { background: var(--amber-soft); border: 2px solid var(--amber-fill); color: var(--ink); padding: 18px 10px; font-size: 1.05rem; }
+.btn-slow.on { background: var(--amber-fill); color: #1b1300; }
+.btn-break { padding: 18px 10px; font-size: 1.05rem; }
+.btn-break.on { background: var(--brk); color: #fff; border-color: var(--brk); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 6px 11px; border-radius: 99px; font-size: .85rem; font-weight: 600; background: var(--bg); }
+.chip.on { background: var(--amber-fill); border-color: var(--amber-fill); color: #1b1300; }
+.gps-line { font-size: .82rem; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brk); display: inline-block; }
+.dot.on { background: var(--good); }
+
+/* Timeline bar, drawn to scale */
+.tl { position: relative; height: 14px; border-radius: 3px; background: color-mix(in srgb, var(--sign) 22%, var(--bg)); overflow: hidden; }
+.tl span { position: absolute; top: 0; bottom: 0; }
+.tl .s { background: var(--amber-fill); }
+.tl .b { background: var(--brk); }
+.tl-legend { display: flex; gap: 14px; font-size: .75rem; color: var(--muted); flex-wrap: wrap; }
+.tl-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+/* Location + photos */
+.here { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.btn-loc { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; font-size: .9rem; }
+.btn-loc svg { width: 17px; height: 17px; stroke: var(--sign); fill: none; stroke-width: 2; }
+.hint { font-size: .82rem; color: var(--muted); }
+.hint.warn { color: var(--amber); }
+.inline { display: flex; gap: 8px; }
+.inline input { flex: 1 1 auto; }
+.inline button { white-space: nowrap; }
+[hidden] { display: none !important; }
+.btn-photo { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); padding: 9px 12px; font-weight: 600; font-size: .9rem; }
+.btn-photo svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linejoin: round; }
+.btn-photo:focus-within { outline: 2px solid var(--sign); outline-offset: 2px; }
+.photo-status { display: flex; gap: 10px; align-items: center; font-size: .82rem; color: var(--muted); min-height: 0; }
+.photo-status:empty { display: none; }
+.thumb { width: 56px; height: 42px; object-fit: cover; border-radius: 5px; border: 1px solid var(--line); flex: none; }
+.photos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.photos figure { margin: 0; display: grid; gap: 4px; font-size: .8rem; color: var(--muted); }
+.photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+
+.offer { background: var(--surface); border: 2px solid var(--sign); border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
+.offer h2 { font-size: 1.15rem; }
+.slow-edit { display: flex; gap: 10px; align-items: center; font-size: .9rem; padding: 6px 0; border-top: 1px solid var(--line); }
+.slow-edit:first-of-type { border-top: 0; }
+.slow-edit input { width: auto; }
+
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: .9rem; }
+.check input { width: auto; margin-top: 3px; }
+.route-map { width: 100%; height: auto; display: block; background: color-mix(in srgb, var(--sign) 6%, var(--bg)); border-radius: 8px; border: 1px solid var(--line); }
+.share { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.share a { color: var(--sign); font-weight: 600; }
+
+.journeys { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.journey { text-align: left; display: grid; gap: 2px; padding: 12px; border: 1px solid var(--line); background: var(--bg); }
+.journey b { font-size: 1rem; }
+.journey span { font-size: .8rem; color: var(--muted); font-weight: 400; overflow-wrap: anywhere; }
+.journey .num { color: var(--sign); font-weight: 600; }
+.ins { display: grid; gap: 4px; }
+.ins-row { display: grid; grid-template-columns: 7.5em 1fr auto 2.2em; gap: 8px; align-items: center; font-size: .84rem; }
+.ins-bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+.ins-bar i { display: block; height: 100%; background: color-mix(in srgb, var(--sign) 60%, var(--bg)); }
+.ins-notes { display: grid; gap: 4px; font-size: .9rem; padding: 10px 12px; background: color-mix(in srgb, var(--sign) 8%, var(--surface)); border-radius: 8px; }
+.sign-eta { font-size: .9rem; opacity: .92; }
+.hol-row { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 6px; align-items: center; font-size: .85rem; }
+.hol-row input { padding: 7px 8px; }
+
+/* Log */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 460px) { .stats { grid-template-columns: 1fr 1fr; } }
+.stat { display: grid; gap: 2px; }
+.stat .v { font-family: var(--f-num); font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.trip { display: grid; gap: 8px; padding: 13px 0; border-top: 1px solid var(--line); cursor: pointer; background: none; border-left: 0; border-right: 0; border-bottom: 0; border-radius: 0; text-align: left; font-weight: 400; width: 100%; color: var(--ink); padding-inline: 0; }
+.trip:first-child { border-top: 0; }
+.trip-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.trip-route { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.trip-dur { font-family: var(--f-num); font-weight: 600; white-space: nowrap; }
+.trip-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .84rem; color: var(--muted); }
+.trip-meta .slow { color: var(--amber); font-weight: 600; }
+.tag { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); }
+.empty { text-align: center; padding: 26px 10px; display: grid; gap: 10px; justify-items: center; color: var(--muted); }
+.empty svg { color: var(--muted); }
+
+/* Routes */
+.route { display: grid; gap: 10px; padding: 14px 0; border-top: 1px solid var(--line); }
+.route:first-child { border-top: 0; padding-top: 0; }
+.route-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 46px; }
+.bars span { flex: 1 1 0; max-width: 22px; background: color-mix(in srgb, var(--sign) 55%, var(--bg)); border-radius: 2px 2px 0 0; position: relative; }
+.bars span.best { background: var(--good); }
+.bars span .sl { position: absolute; left: 0; right: 0; bottom: 0; background: var(--amber-fill); border-radius: 0; }
+.kv { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font-size: .84rem; }
+@media (max-width: 460px) { .kv { grid-template-columns: 1fr 1fr; } }
+.kv b { display: block; font-family: var(--f-num); font-weight: 600; font-size: .95rem; }
+
+/* Detail */
+.slow-list { display: grid; gap: 0; }
+.slow-item { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); font-size: .9rem; }
+.slow-item:first-child { border-top: 0; }
+.slow-item a { color: var(--sign); }
+.confirm { background: var(--amber-soft); border: 1px solid var(--amber-fill); border-radius: 8px; padding: 12px; display: grid; gap: 10px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-row > * { flex: 1 1 auto; }
+
+/* Bottom nav */
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); }
+nav.tabs .in { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
+nav.tabs button { border: 0; background: none; border-radius: 0; padding: 9px 4px 10px; display: grid; justify-items: center; gap: 2px; font-size: .74rem; color: var(--muted); font-weight: 600; }
+nav.tabs button[aria-current="page"] { color: var(--sign); }
+nav.tabs button[aria-current="page"] svg { stroke: var(--sign); }
+nav.tabs svg { width: 22px; height: 22px; stroke: var(--muted); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber-fill); position: absolute; margin-left: 16px; margin-top: -2px; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 9px 15px; border-radius: 8px; font-size: .88rem; z-index: 9; max-width: calc(100% - 32px); }
+@media (prefers-reduced-motion: no-preference) { .btn-slow.on { animation: pulse 1.6s ease-in-out infinite; } @keyframes pulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--amber-fill) 30%, transparent); } } }
+</style>
+
+<div class="wrap" id="app">
+  <header class="top">
+    <h1>Drive Log</h1>
+    <span class="store-pill" id="storePill">Connecting…</span>
+  </header>
+  <main id="view"></main>
+</div>
+
+<nav class="tabs" aria-label="Sections">
+  <div class="in">
+    <button data-tab="drive" aria-current="page"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 14.5V21M9.6 11.2 3.4 9.5M14.4 11.2l6.2-1.7"/></svg>Drive<span class="live-dot" id="liveDot" hidden></span></button>
+    <button data-tab="log"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Log</button>
+    <button data-tab="routes"><svg viewBox="0 0 24 24"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h7a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h7"/></svg>Routes</button>
+    <button data-tab="car"><svg viewBox="0 0 24 24"><path d="M5 17h14v-4.5l-2-5H7l-2 5V17Z"/><path d="M5 12.5h14"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg>Car</button>
+  </div>
+</nav>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+"use strict";
+const LITRES_PER_UK_GALLON = 4.54609;
+const REASONS = ["Traffic", "Roadworks", "Accident", "Junction", "Weather", "School run", "Other"];
+const KINDS = ["Commute", "School run", "Heading home", "Shopping", "Visiting", "Day out"];
+// Typical England school holidays. Councils differ, so these are editable on the Car tab.
+const DEFAULT_HOLIDAYS = [["2026-07-22", "2026-09-02"], ["2026-10-26", "2026-10-30"], ["2026-12-21", "2027-01-01"], ["2027-02-15", "2027-02-19"], ["2027-03-29", "2027-04-09"], ["2027-05-31", "2027-06-04"], ["2027-07-23", "2027-09-01"]];
+// Bank holidays, England and Wales.
+const BANK_HOLIDAYS = new Set(["2025-01-01", "2025-04-18", "2025-04-21", "2025-05-05", "2025-05-26", "2025-08-25", "2025-12-25", "2025-12-26",
+  "2026-01-01", "2026-04-03", "2026-04-06", "2026-05-04", "2026-05-25", "2026-08-31", "2026-12-25", "2026-12-28",
+  "2027-01-01", "2027-03-26", "2027-03-29", "2027-05-03", "2027-05-31", "2027-08-30", "2027-12-27", "2027-12-28"]);
+const DEFAULT_CAR = { name: "My car", fuel: "Petrol", mpg: 45, ppl: 136.9, holidays: DEFAULT_HOLIDAYS };
+
+const state = {
+  tab: "drive", detailId: null, editing: false, confirmDel: false, confirmDiscard: false, ending: false,
+  car: { ...DEFAULT_CAR }, trips: [], active: null, mode: "loading",
+  gps: "off", gpsSpeed: null, routeFilter: null, shareTrim: true,
+};
+
+/* ---------- helpers ---------- */
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pad = (n) => String(n).padStart(2, "0");
+const sum = (arr, f) => (arr || []).reduce((a, x) => a + f(x), 0);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function fmtDur(ms) {
+  const s = Math.max(0, Math.round(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  if (h) return `${h}h ${pad(m)}m`;
+  if (m >= 10) return `${m}m`;
+  if (m) return `${m}m ${pad(s % 60)}s`;
+  return `${s}s`;
+}
+function fmtClock(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 3600)}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
+}
+const fmtMoney = (v) => v == null ? "–" : "£" + v.toFixed(2);
+const fmtMi = (v) => v == null || !v ? "–" : (v < 10 ? v.toFixed(1) : Math.round(v)) + " mi";
+const fmtDate = (t) => new Date(t).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+const fmtTime = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+const routeName = (t) => `${(t.from || "Start").trim()} → ${(t.to || "Finish").trim()}`;
+const routeKey = (t) => routeName(t).toLowerCase().replace(/\s+/g, " ");
+let toastTimer;
+function toast(msg) { const el = $("#toast"); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.hidden = true), 2600); }
+
+function stats(t, now = Date.now()) {
+  const end = t.endedAt || now;
+  const total = end - t.startedAt;
+  const brk = sum(t.breaks, (b) => (b.end || end) - b.start);
+  const slow = sum(t.slow, (s) => (s.end || end) - s.start);
+  const moving = Math.max(0, total - brk);
+  const miles = t.endedAt ? (t.distance || 0) : (t.gpsMiles || 0);
+  const avg = miles && moving > 60000 ? miles / (moving / 3600000) : null;
+  const mpg = t.mpg ?? state.car.mpg, ppl = t.ppl ?? state.car.ppl;
+  const litres = miles && mpg ? (miles / mpg) * LITRES_PER_UK_GALLON : null;
+  const cost = litres != null && ppl ? (litres * ppl) / 100 : null;
+  return { total, brk, slow, moving, miles, avg, litres, cost, end };
+}
+function haversineMiles(a, b) {
+  const R = 3958.8, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+/* ---------- journey patterns ---------- */
+const isoDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+function dayType(t) {
+  const iso = isoDay(t), wd = new Date(t).getDay();
+  if (BANK_HOLIDAYS.has(iso)) return "Bank holiday";
+  if (wd === 0 || wd === 6) return "Weekend";
+  if ((state.car.holidays || []).some(([a, b]) => iso >= a && iso <= b)) return "School holiday";
+  return "Weekday";
+}
+const DAY_PHRASE = { Weekday: "on term-time weekdays", Weekend: "at weekends", "School holiday": "in school holidays", "Bank holiday": "on bank holidays" };
+const BANDS = [[0, 420, "Before 7am"], [420, 570, "7–9:30am"], [570, 900, "9:30am–3pm"], [900, 990, "3–4:30pm"], [990, 1140, "4:30–7pm"], [1140, 1440, "After 7pm"]];
+const minuteOfDay = (t) => { const d = new Date(t); return d.getHours() * 60 + d.getMinutes(); };
+const band = (t) => BANDS.find(([a, b]) => minuteOfDay(t) >= a && minuteOfDay(t) < b)[2];
+const median = (xs) => { const v = [...xs].sort((a, b) => a - b), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+const runsFor = (key) => state.trips.filter((t) => routeKey(t) === key);
+// Expected time: prefer drives at a similar time on the same kind of day, then a similar time, then the whole route.
+function expectFor(key, when = Date.now()) {
+  const runs = runsFor(key); if (!runs.length) return null;
+  const dt = dayType(when), m = minuteOfDay(when);
+  const near = (t) => Math.abs(minuteOfDay(t.startedAt) - m) <= 75;
+  const tiers = [
+    [runs.filter((t) => near(t) && dayType(t.startedAt) === dt), `${DAY_PHRASE[dt]} around this time`],
+    [runs.filter(near), "around this time of day"],
+    [runs, "on this route"],
+  ];
+  const [set, label] = tiers.find(([x]) => x.length >= 2) || tiers[2];
+  const times = set.map((t) => stats(t).moving).sort((a, b) => a - b);
+  return { ms: median(times), lo: times[0], hi: times[times.length - 1], n: set.length, label };
+}
+const expectText = (e) => `Usually ${fmtDur(e.ms)} ${e.label} (${e.n} drive${e.n > 1 ? "s" : ""}${e.n > 2 && e.hi - e.lo > 120000 ? `, ${fmtDur(e.lo)} to ${fmtDur(e.hi)}` : ""})`;
+function groupMedian(runs, keyFn, order) {
+  const g = {}; runs.forEach((t) => { const k = keyFn(t); (g[k] ||= []).push(stats(t).moving); });
+  return order.filter((k) => g[k]).map((k) => ({ k, ms: median(g[k]), n: g[k].length }));
+}
+function insightRows(title, rows) {
+  if (rows.length < 2) return "";
+  const max = Math.max(...rows.map((r) => r.ms));
+  return `<div class="ins"><span class="label">${title}</span>${rows.map((r) => `<div class="ins-row"><span>${esc(r.k)}</span><span class="ins-bar"><i style="width:${((r.ms / max) * 100).toFixed(1)}%"></i></span><span class="num">${fmtDur(r.ms)}</span><span class="muted num">×${r.n}</span></div>`).join("")}</div>`;
+}
+function insights(runs) {
+  if (runs.length < 3) return runs.length ? `<div class="hint">After a few more drives on this route you'll see how the time of day, the day of the week and holidays change it.</div>` : "";
+  const bands = groupMedian(runs, (t) => band(t.startedAt), BANDS.map((b) => b[2]));
+  const days = groupMedian(runs, (t) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(t.startedAt).getDay()], ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+  const types = groupMedian(runs, (t) => dayType(t.startedAt), ["Weekday", "School holiday", "Weekend", "Bank holiday"]);
+  const notes = [];
+  const solid = bands.filter((b) => b.n >= 2);
+  if (solid.length >= 2) {
+    const best = solid.reduce((a, b) => (b.ms < a.ms ? b : a)), worst = solid.reduce((a, b) => (b.ms > a.ms ? b : a));
+    if (worst.ms - best.ms >= 180000) notes.push(`Leaving ${best.k} is usually ${fmtDur(worst.ms - best.ms)} quicker than ${worst.k}.`);
+  }
+  const wk = types.find((x) => x.k === "Weekday"), hol = types.find((x) => x.k === "School holiday");
+  if (wk && hol && wk.n >= 2 && Math.abs(wk.ms - hol.ms) >= 120000) notes.push(`School holidays are about ${fmtDur(Math.abs(wk.ms - hol.ms))} ${hol.ms < wk.ms ? "quicker" : "slower"} than term-time weekdays.`);
+  const sd = days.filter((d) => d.n >= 2);
+  if (sd.length >= 2) { const w = sd.reduce((a, b) => (b.ms > a.ms ? b : a)); if (w.ms - median(sd.map((d) => d.ms)) >= 180000) notes.push(`${w.k}s tend to be the slowest day.`); }
+  return `${notes.length ? `<div class="ins-notes">${notes.map((n) => `<div>${esc(n)}</div>`).join("")}</div>` : ""}
+    ${insightRows("By time you set off", bands)}${insightRows("By day", days)}${insightRows("Term time and holidays", types)}`;
+}
+// Regular journeys: routes driven at least twice, labelled by what they're usually for.
+function regulars() {
+  return topRoutes().filter((r) => r.trips.length >= 2).slice(0, 6).map((r) => {
+    const kinds = {}; r.trips.forEach((t) => t.kind && (kinds[t.kind] = (kinds[t.kind] || 0) + 1));
+    const kind = Object.entries(kinds).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+    return { ...r, kind, from: r.trips[0].from || "", to: r.trips[0].to || "", expect: expectFor(r.key) };
+  });
+}
+function updateExpect() {
+  const el = $("#expectMsg"), f = $("#from"), to = $("#to"); if (!el || !f) return;
+  const e = expectFor(routeKey({ from: f.value, to: to.value }));
+  el.textContent = e ? expectText(e) + "." : "";
+}
+
+/* ---------- capabilities used on demand ---------- */
+const IN_CLAUDE = !!(window.claude && window.claude.use);
+async function saveFile(filename, data) {
+  if (store.downloads) return store.downloads.save({ filename, data });
+  if (IN_CLAUDE) throw { code: "unavailable" };
+  const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type: "text/plain" }));
+  const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+const useCap = (n) => (window.claude && window.claude.use ? window.claude.use(n).catch(() => null) : Promise.resolve(null));
+let sampleP = null, assetsP = null;
+const getSample = () => (sampleP ??= useCap("sample"));
+const getAssets = () => (assetsP ??= useCap("assets"));
+const POSTCODE = /^([A-Z]{1,2}\d[A-Z\d]?)(\s*\d[A-Z]{2})?$/i;
+const tidyPostcode = (pc) => { const c = pc.toUpperCase().replace(/\s+/g, ""); return c.length > 4 ? c.slice(0, -3) + " " + c.slice(-3) : c; };
+
+// Ask Claude for a short, recognisable name for a postcode or coordinates. Falls back to the postcode itself.
+async function placeName({ postcode, lat, lon }) {
+  const sample = await getSample();
+  const pc = postcode ? tidyPostcode(postcode) : null;
+  if (!sample) return pc;
+  try {
+    const r = await sample.json(
+      `You name places for a UK driving log. ${pc ? `Postcode: ${pc}.` : `Coordinates: ${lat.toFixed(5)}, ${lon.toFixed(5)}.`}\n` +
+      `Reply with JSON only: {"name": "<short place name, the neighbourhood or village plus town if useful, at most 4 words, e.g. \"Caversham, Reading\">", "postcode": "<the postcode or postcode district if you know it, else null>"}. ` +
+      `If you are not sure of the neighbourhood, give just the town.`,
+      { modelTier: "quick" });
+    const name = r && typeof r.name === "string" ? r.name.trim() : "";
+    const code = pc || (r && typeof r.postcode === "string" ? r.postcode.trim().toUpperCase() : "");
+    if (!name) return code || null;
+    return code ? `${name} (${code})` : name;
+  } catch { return pc; }
+}
+function getPosition() {
+  return new Promise((res) => {
+    if (!navigator.geolocation) return res(null);
+    try { navigator.geolocation.getCurrentPosition((p) => res(p.coords), () => res(null), { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }); }
+    catch { res(null); }
+  });
+}
+async function startFromHere() {
+  const msg = $("#hereMsg"), box = $("#pcBox"), from = $("#from");
+  msg.className = "hint"; msg.textContent = "Finding where you are…";
+  const c = await getPosition();
+  if (!c) {
+    msg.className = "hint warn"; msg.textContent = "Your location isn't available here. Enter the postcode instead.";
+    box.hidden = false; $("#postcode").focus(); return;
+  }
+  state.fromCoords = { lat: c.latitude, lon: c.longitude };
+  msg.textContent = "Naming this spot…";
+  const name = await placeName({ lat: c.latitude, lon: c.longitude });
+  from.value = name || `${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}`;
+  msg.textContent = "Check the name and edit it if it's not quite right.";
+}
+async function nameField(input, msgEl) {
+  const v = input.value.trim();
+  if (!POSTCODE.test(v)) return false;
+  const was = v;
+  if (msgEl) { msgEl.className = "hint"; msgEl.textContent = "Looking up " + tidyPostcode(v) + "…"; }
+  const name = await placeName({ postcode: v });
+  if (input.value.trim() === was && name) input.value = name;
+  if (msgEl) msgEl.textContent = name ? "Named from the postcode. Edit it if you like." : "";
+  return true;
+}
+
+// Dashboard photos: shrink, keep a copy with the drive, and ask Claude to read the mileage.
+async function shrink(file) {
+  try {
+    const img = await createImageBitmap(file);
+    const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise((r) => c.toBlob((b) => r(b || file), "image/jpeg", 0.85));
+  } catch { return file; }
+}
+async function readMileage(blob) {
+  const sample = await getSample(); if (!sample) return { value: null, why: "nosample" };
+  const lim = await sample.limits().catch(() => null);
+  if (!lim || !lim.images) return { value: null, why: "nosample" };
+  try {
+    const r = await sample.json(
+      "This is a photo of a car's instrument cluster. Read the odometer, the car's total mileage, not a trip meter (often labelled TRIP A/B) and not the range. " +
+      'Reply with JSON only: {"mileage": <number with no commas, or null if you cannot read it clearly>, "unit": "mi" | "km" | null}.',
+      { images: [blob], modelTier: "default" });
+    const v = r && Number(r.mileage);
+    return v > 0 ? { value: v, unit: r.unit } : { value: null, why: "unreadable" };
+  } catch (e) { return { value: null, why: e && e.code === "not_granted" ? "nosample" : "unreadable" }; }
+}
+async function handlePhoto(which, file) {
+  const status = document.getElementById(which === "start" ? "photoStart" : "photoEnd");
+  const input = document.getElementById(which === "start" ? (state.active ? "odoStartE" : "odoStart") : "odoEnd");
+  const tripId = state.active && state.active.id;
+  if (which === "start" && !tripId) state.photoReading = true;
+  const blob = await shrink(file);
+  const url = URL.createObjectURL(blob);
+  const show = (text, warn) => { if (status) status.innerHTML = `<img class="thumb" src="${url}" alt="Mileage photo"><span class="${warn ? "hint warn" : ""}">${esc(text)}</span>`; };
+  show("Reading the mileage…");
+  const assets = await getAssets();
+  const [up, read] = await Promise.all([assets ? assets.upload(blob).catch(() => null) : null, readMileage(blob)]);
+  const photoId = up ? up.id : null;
+  if (which === "start") {
+    state.photoReading = false;
+    // The drive may have started while the photo was being read; attach it to that drive.
+    const a = state.active && (!tripId || state.active.id === tripId) ? state.active : null;
+    if (a) { a.startPhoto = photoId; if (read.value && (!tripId || !a.odoStart)) a.odoStart = read.value; store.saveActive(); }
+    else state.pendingStartPhoto = photoId;
+  } else state.endPhoto = photoId;
+  const live = document.getElementById(input ? input.id : "");
+  if (read.value && live) { live.value = read.value; fillDistanceFromMileage(); }
+  if (read.value) show(`Read ${read.value.toLocaleString()} ${read.unit === "km" ? "km" : "miles"}. Correct it if that's wrong.`);
+  else if (read.why === "nosample") show(`${photoId ? "Photo saved. " : ""}Type the mileage from the photo. Reading it automatically needs this page open in Claude.`, true);
+  else show("Couldn't read the mileage clearly. Type it in, or take a sharper photo.", true);
+}
+function fillDistanceFromMileage() {
+  const s = parseFloat($("#odoStartE")?.value), e = parseFloat($("#odoEnd")?.value), d = $("#distance");
+  if (d && s > 0 && e > s && (!d.value || d.dataset.auto === "1")) { d.value = (Math.round((e - s) * 10) / 10).toString(); d.dataset.auto = "1"; }
+}
+const photoBtn = (which) => `<label class="btn-photo"><input type="file" accept="image/*" capture="environment" data-photo="${which}" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4V8Z"/><circle cx="12" cy="13.2" r="3.4"/></svg>Photo</label>`;
+
+/* ---------- storage: cloud (db, private per person) with a local fallback ---------- */
+const store = {
+  db: null, uid: null, downloads: null, unsub: null,
+  local: {
+    get(k, d) { try { const v = localStorage.getItem("drivelog." + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem("drivelog." + k, JSON.stringify(v)); } catch {} },
+    del(k) { try { localStorage.removeItem("drivelog." + k); } catch {} },
+  },
+  base() { return "data/users/" + this.uid; },
+  tripsCol() { return this.db.doc(this.base() + "/car").collection("trips"); },
+  async init() {
+    state.active = this.local.get("active", null);
+    const use = window.claude && window.claude.use ? (n) => window.claude.use(n).catch(() => null) : async () => null;
+    const [db, user, downloads] = await Promise.all([use("db"), use("user"), use("downloads")]);
+    this.downloads = downloads;
+    let id = null;
+    try { id = user ? await user.id() : null; } catch {}
+    if (db && id) {
+      this.db = db; this.uid = id; state.mode = "cloud";
+      try {
+        const car = await db.doc(this.base() + "/car").get();
+        if (car.exists) state.car = { ...DEFAULT_CAR, ...car.data() };
+        if (!state.active) {
+          const act = await db.doc(this.base() + "/active").get();
+          if (act.exists && act.data().trip) { state.active = act.data().trip; this.local.set("active", state.active); }
+        }
+      } catch {}
+      this.unsub = this.tripsCol().orderBy("startedAt", "desc").limit(1000).onSnapshot(
+        (snap) => { state.trips = snap.docs.map((d) => ({ ...d.data(), id: d.id })); softRender(); },
+        () => { state.mode = "local"; this.loadLocal(); render(); }
+      );
+    } else {
+      state.mode = "local"; this.loadLocal();
+    }
+    if (state.active) resumeActive();
+    render();
+  },
+  loadLocal() { state.car = { ...DEFAULT_CAR, ...this.local.get("car", {}) }; state.trips = this.local.get("trips", []).sort((a, b) => b.startedAt - a.startedAt); },
+  async saveCar(car) {
+    state.car = car;
+    if (state.mode === "cloud") { try { await this.db.doc(this.base() + "/car").set(car); } catch (e) { toast("Couldn't save the car settings. Check your connection and try again."); } }
+    else this.local.set("car", car);
+  },
+  async saveTrip(trip) {
+    const { id, ...body } = trip;
+    if (state.mode === "cloud") {
+      try { await this.tripsCol().doc(id).set(body); }
+      catch (e) { toast(e && e.code === "quota_exceeded" ? "The log is full. Delete some old drives to save new ones." : "Couldn't save that drive. Check your connection and try again."); return false; }
+    }
+    const i = state.trips.findIndex((t) => t.id === id);
+    if (i >= 0) state.trips[i] = trip; else state.trips.push(trip);
+    state.trips.sort((a, b) => b.startedAt - a.startedAt);
+    if (state.mode !== "cloud") this.local.set("trips", state.trips);
+    return true;
+  },
+  async deleteTrip(id) {
+    if (state.mode === "cloud") { try { await this.tripsCol().doc(id).delete(); } catch { toast("Couldn't delete that drive."); return; } }
+    state.trips = state.trips.filter((t) => t.id !== id);
+    if (state.mode !== "cloud") this.local.set("trips", state.trips);
+  },
+  // Active drive: local copy on every change; cloud copy on events only (start, slow, break), so a reload mid-drive resumes.
+  saveActive(cloud = true) {
+    if (state.active) this.local.set("active", state.active); else this.local.del("active");
+    if (cloud && state.mode === "cloud") {
+      const ref = this.db.doc(this.base() + "/active");
+      (state.active ? ref.set({ trip: state.active }) : ref.delete()).catch(() => {});
+    }
+  },
+};
+
+/* ---------- live drive ---------- */
+let tick = null, watchId = null, lastPos = null, lowSince = null, highSince = null, wakeLock = null;
+const openSlow = () => state.active && state.active.slow.find((s) => !s.end);
+const openBreak = () => state.active && state.active.breaks.find((b) => !b.end);
+
+function startDrive(from, to, odoStart) {
+  state.active = { id: uid(), from, to, startedAt: Date.now(), slow: [], breaks: [], gpsMiles: 0, odoStart: odoStart || null, autoSlow: true, kind: state.kind || null, recordRoute: document.getElementById("recordRoute") ? document.getElementById("recordRoute").checked : true, track: [], startPhoto: state.pendingStartPhoto || null, fromCoords: state.fromCoords || null };
+  state.pendingStartPhoto = null; state.fromCoords = null; state.kind = null;
+  const e = expectFor(routeKey(state.active), state.active.startedAt);
+  if (e) state.active.expect = { ms: e.ms, text: expectText(e) };
+  store.saveActive();
+  resumeActive();
+  render();
+}
+function resumeActive() {
+  clearInterval(tick);
+  tick = setInterval(updateLive, 1000);
+  startGps();
+  keepAwake();
+}
+function stopLive() {
+  clearInterval(tick); tick = null;
+  if (watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
+  watchId = null; lastPos = null; lowSince = highSince = stillSince = movingSince = null; state.offer = state.dismissed = null; state.gps = "off"; state.gpsSpeed = null;
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+async function keepAwake() {
+  try { if (navigator.wakeLock && document.visibilityState === "visible") wakeLock = await navigator.wakeLock.request("screen"); } catch {}
+}
+document.addEventListener("visibilitychange", () => { if (state.active && document.visibilityState === "visible") keepAwake(); });
+
+function startGps() {
+  if (!navigator.geolocation) { state.gps = "unavailable"; return; }
+  try {
+    watchId = navigator.geolocation.watchPosition(onPos, () => { state.gps = "unavailable"; updateLive(); }, { enableHighAccuracy: true, maximumAge: 3000, timeout: 30000 });
+    state.gps = "waiting";
+  } catch { state.gps = "unavailable"; }
+}
+function onPos(p) {
+  const a = state.active; if (!a) return;
+  const { latitude: lat, longitude: lon, accuracy, speed } = p.coords;
+  state.gps = "on";
+  if (accuracy > 75) return;
+  const here = { lat, lon, t: p.timestamp };
+  let mph = speed != null && speed >= 0 ? speed * 2.23694 : null;
+  if (lastPos) {
+    const d = haversineMiles(lastPos, here), dt = (here.t - lastPos.t) / 1000;
+    if (d > 0.004 && d < 3 && !openBreak()) a.gpsMiles = (a.gpsMiles || 0) + d;
+    if (mph == null && dt > 0) mph = d / (dt / 3600);
+  }
+  lastPos = here; a.lastLat = lat; a.lastLon = lon;
+  if (a.recordRoute) recordPoint(a, here);
+  state.gpsSpeed = mph;
+  if (mph != null && a.autoSlow && !openBreak()) autoSlow(mph, here.t);
+  if (mph != null) trackStops(mph, here);
+  if (!a.destTried) resolveDest(a);
+  store.saveActive(false);
+  updateLive();
+}
+// Route: a point every ~50 m, stored compactly as [lat×1e5, lon×1e5, seconds since start]; thinned if a drive gets very long.
+const unpack = (t) => (t.track || []).map((p) => ({ lat: p[0] / 1e5, lon: p[1] / 1e5, t: t.startedAt + p[2] * 1000 }));
+function recordPoint(a, here) {
+  a.track ??= [];
+  const last = a.track[a.track.length - 1];
+  if (last && haversineMiles({ lat: last[0] / 1e5, lon: last[1] / 1e5 }, here) < 0.03) return;
+  a.track.push([Math.round(here.lat * 1e5), Math.round(here.lon * 1e5), Math.round((here.t - a.startedAt) / 1000)]);
+  if (a.track.length > 5000) a.track = a.track.filter((_, i, arr) => i % 2 === 0 || i === arr.length - 1);
+}
+// Privacy: drop every point within a mile of where the drive started or finished, wherever along the route it falls.
+const TRIM_MILES = 1;
+function trimEnds(pts) {
+  if (pts.length < 2) return pts;
+  const a = pts[0], b = pts[pts.length - 1];
+  return pts.filter((p) => haversineMiles(p, a) > TRIM_MILES && haversineMiles(p, b) > TRIM_MILES);
+}
+function sharedPoints(t) { const pts = unpack(t); return state.shareTrim ? trimEnds(pts) : pts; }
+const stripPostcodes = (name) => name.replace(/\s*\([^)]*\)/g, "").replace(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/gi, "").trim();
+const sharedName = (t) => (state.shareTrim ? stripPostcodes(routeName(t)) : routeName(t));
+function project(pts, W, H, padX = 22, padY = 22) {
+  const midLat = pts.reduce((s, p) => s + p.lat, 0) / pts.length, k = Math.cos((midLat * Math.PI) / 180);
+  const xs = pts.map((p) => p.lon * k), ys = pts.map((p) => -p.lat);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const sc = Math.min((W - 2 * padX) / (maxX - minX || 1e-6), (H - 2 * padY) / (maxY - minY || 1e-6));
+  const ox = (W - (maxX - minX) * sc) / 2, oy = (H - (maxY - minY) * sc) / 2;
+  const xy = pts.map((p, i) => [ox + (xs[i] - minX) * sc, oy + (ys[i] - minY) * sc]);
+  const pxPerMile = sc / 69.05; // one degree of latitude is about 69 miles
+  const nice = [0.25, 0.5, 1, 2, 5, 10, 20, 50].find((m) => m * pxPerMile >= W / 7) || 50;
+  return { xy, bar: { miles: nice, px: nice * pxPerMile } };
+}
+const inSlow = (t, time) => t.slow.some((s) => time >= s.start && time <= s.end);
+function routeSegments(t, pts, xy) {
+  const segs = []; let cur = null;
+  pts.forEach((p, i) => {
+    const slow = inSlow(t, p.t), gap = i > 0 && haversineMiles(pts[i - 1], p) > TRIM_MILES / 2;
+    if (!cur || cur.slow !== slow || gap) { cur = { slow, pts: cur && !gap ? [xy[i - 1]] : [] }; segs.push(cur); }
+    cur.pts.push(xy[i]);
+  });
+  return segs.filter((s) => s.pts.length > 1);
+}
+function routeSvg(t) {
+  const pts = sharedPoints(t);
+  if (pts.length < 2) return `<div class="muted">${state.shareTrim && unpack(t).length > 1 ? "This drive is too short to show once the mile around each end is hidden." : "Not enough of the route was recorded to draw it."}</div>`;
+  const W = 600, H = 380, { xy, bar } = project(pts, W, H);
+  const line = (seg, color, w) => `<polyline points="${seg.pts.map((q) => q[0].toFixed(1) + "," + q[1].toFixed(1)).join(" ")}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const segs = routeSegments(t, pts, xy);
+  const [sx, sy] = xy[0], [ex, ey] = xy[xy.length - 1];
+  return `<svg class="route-map" viewBox="0 0 ${W} ${H}" role="img" aria-label="Map of the route${state.shareTrim ? " with the first and last mile hidden" : ""}">
+    ${segs.map((g) => line(g, g.slow ? "var(--amber-fill)" : "var(--sign)", g.slow ? 6 : 4)).join("")}
+    <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="7" fill="var(--surface)" stroke="var(--good)" stroke-width="3"/>
+    <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="7" fill="var(--sign)" stroke="var(--surface)" stroke-width="3"/>
+    <g fill="var(--muted)" font-family="Overpass, system-ui, sans-serif" font-size="13">
+      <rect x="22" y="${H - 22}" width="${bar.px.toFixed(1)}" height="3" fill="var(--muted)"/>
+      <text x="22" y="${H - 28}">${bar.miles} mi</text>
+    </g>
+  </svg>
+  <div class="tl-legend"><span><i style="background:var(--good)"></i>${state.shareTrim ? "Shown from here" : "Start"}</span><span><i style="background:var(--sign)"></i>${state.shareTrim ? "Shown to here" : "Finish"}</span><span><i style="background:var(--amber-fill)"></i>Slow</span></div>`;
+}
+function renderRoute(t) {
+  if (!t.track || t.track.length < 2) return "";
+  return `<section class="panel">
+    <h2>Route</h2>
+    ${routeSvg(t)}
+    <div class="share">
+      <label class="check"><input type="checkbox" id="shareTrim" ${state.shareTrim ? "checked" : ""}><span>Hide the mile around the start and finish<br><span class="hint">Recommended before sharing, so nobody can tell where you live or work. Postcodes and times are left out of what you share too. Your full route stays private in your log.</span></span></label>
+      <div class="btn-row"><button data-act="share-png">Save map image</button><button data-act="share-json">Save route file</button><button data-act="share-link">Copy Google Maps link</button></div>
+      <div class="hint" id="shareMsg">The image and Google Maps link are good for WhatsApp. The route file (GeoJSON) opens in mapping apps.</div>
+    </div>
+  </section>`;
+}
+function mapsLink(t) {
+  const pts = sharedPoints(t); if (pts.length < 2) return null;
+  const f = (p) => p.lat.toFixed(5) + "," + p.lon.toFixed(5);
+  const n = Math.min(8, pts.length - 2), way = [];
+  for (let i = 1; i <= n; i++) way.push(pts[Math.round((i * (pts.length - 1)) / (n + 1))]);
+  return `https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${f(pts[0])}&destination=${f(pts[pts.length - 1])}${way.length ? "&waypoints=" + encodeURIComponent(way.map(f).join("|")) : ""}`;
+}
+async function sharePng(t) {
+  const pts = sharedPoints(t); if (pts.length < 2) return toast("Not enough route to draw.");
+  const W = 1080, H = 1080, top = 150, c = document.createElement("canvas"); c.width = W; c.height = H;
+  const g = c.getContext("2d"), css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
+  g.fillStyle = v("--surface"); g.fillRect(0, 0, W, H);
+  g.fillStyle = v("--ink"); g.font = "800 46px Overpass, system-ui, sans-serif"; g.fillText(sharedName(t).slice(0, 40), 60, 90);
+  const st = stats(t);
+  g.fillStyle = v("--muted"); g.font = "400 30px Overpass, system-ui, sans-serif";
+  g.fillText([fmtDur(st.moving), st.miles ? fmtMi(st.miles) : null, st.slow > 30000 ? fmtDur(st.slow) + " slow" : null].filter(Boolean).join("  ·  "), 60, 132);
+  const { xy, bar } = project(pts, W - 120, H - top - 140, 30, 30);
+  g.save(); g.translate(60, top); g.lineCap = g.lineJoin = "round";
+  for (const seg of routeSegments(t, pts, xy)) { g.strokeStyle = seg.slow ? v("--amber-fill") : v("--sign"); g.lineWidth = seg.slow ? 14 : 9; g.beginPath(); seg.pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); }
+  const dot = ([x, y], fill, stroke) => { g.beginPath(); g.arc(x, y, 15, 0, 7); g.fillStyle = fill; g.fill(); g.lineWidth = 6; g.strokeStyle = stroke; g.stroke(); };
+  dot(xy[0], v("--surface"), v("--good")); dot(xy[xy.length - 1], v("--sign"), v("--surface"));
+  g.restore();
+  g.fillStyle = v("--muted"); g.fillRect(60, H - 70, bar.px, 6); g.font = "400 26px Overpass, system-ui, sans-serif"; g.fillText(bar.miles + " mi", 60, H - 84);
+  g.textAlign = "right"; g.fillText(state.shareTrim ? "Drive Log · first and last mile hidden" : "Drive Log", W - 60, H - 64);
+  const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+  try { await saveFile("drive-route.png", blob); } catch (e) { if (e && e.code !== "declined") toast("Saving files isn't available in this view."); }
+}
+async function shareJson(t) {
+  const pts = sharedPoints(t); if (pts.length < 2) return toast("Not enough route to save.");
+  const st = stats(t);
+  const geo = { type: "Feature", properties: { name: sharedName(t), miles: st.miles || null, drivingMinutes: Math.round(st.moving / 60000), endsHidden: state.shareTrim },
+    geometry: { type: "LineString", coordinates: pts.map((p) => [+p.lon.toFixed(5), +p.lat.toFixed(5)]) } };
+  if (!state.shareTrim) geo.properties.date = new Date(t.startedAt).toISOString().slice(0, 10);
+  try { await saveFile("drive-route.json", JSON.stringify(geo)); } catch (e) { if (e && e.code !== "declined") toast("Saving files isn't available in this view."); }
+}
+
+// Stops: a minute standing still near the destination offers to end the journey; a long stop elsewhere offers a break.
+const LONG_STOP_MS = 10 * 60000, STILL_MPH = 3;
+let stillSince = null, movingSince = null;
+function trackStops(mph, here) {
+  const a = state.active;
+  if (mph < STILL_MPH) { stillSince ??= here.t; movingSince = null; }
+  else if (mph > 8) {
+    stillSince = null;
+    if (state.offer || state.dismissed) { state.offer = state.dismissed = null; softRender(); }
+    // Driving off again ends a break by itself, so nobody has to touch the phone.
+    const b = openBreak();
+    if (b && mph > 15) { movingSince ??= here.t; if (here.t - movingSince > 30000) { b.end = movingSince; movingSince = null; store.saveActive(); softRender(); toast("Break ended. Back on the road."); } }
+    return;
+  }
+  if (stillSince == null) return;
+  const still = here.t - stillSince;
+  const d = a.destCoords;
+  const near = d && haversineMiles(here, d) <= (d.exact ? 0.3 : 1.2);
+  const offer = near && still >= 60000 ? "arrive" : !near && !openBreak() && still >= LONG_STOP_MS ? "break" : null;
+  if (offer && offer !== state.offer && offer !== state.dismissed) { state.offer = offer; state.offerSince = stillSince; softRender(); }
+}
+// Where the drive ends: a past drive's finishing spot for the same destination, else Claude's estimate from the postcode.
+async function resolveDest(a) {
+  a.destTried = true;
+  const key = (a.to || "").trim().toLowerCase(); if (!key) return;
+  const past = state.trips.find((t) => (t.to || "").trim().toLowerCase() === key && t.endCoords);
+  if (past) { a.destCoords = { ...past.endCoords, exact: true }; store.saveActive(false); return; }
+  const m = (a.to.match(/\(([^)]+)\)\s*$/) || [])[1] || a.to;
+  if (!POSTCODE.test(m.trim())) return;
+  const sample = await getSample(); if (!sample) return;
+  try {
+    const r = await sample.json(`Give the approximate centre of the UK postcode ${tidyPostcode(m.trim())} as JSON only: {"lat": <number>, "lon": <number>}, or {"lat": null, "lon": null} if you don't know it.`, { modelTier: "quick" });
+    if (r && Number.isFinite(r.lat) && Number.isFinite(r.lon) && state.active === a) { a.destCoords = { lat: r.lat, lon: r.lon, exact: false }; store.saveActive(false); }
+  } catch {}
+}
+function renderOffer(a) {
+  if (state.offer === "arrive") return `<section class="offer" aria-live="polite">
+    <h2>Looks like you've arrived${a.to ? " at " + esc(a.to) : ""}</h2>
+    <div class="muted">Once you're parked, end the journey. It's timed to when you stopped, at ${fmtTime(state.offerSince)}.</div>
+    <div class="btn-row"><button class="btn-primary" data-act="offer-end">End journey</button><button data-act="offer-no">Not there yet</button></div></section>`;
+  if (state.offer === "break") return `<section class="offer" aria-live="polite">
+    <h2>Stopped for ${fmtDur(Date.now() - state.offerSince)}</h2>
+    <div class="muted">That's longer than a usual hold-up. If you've pulled in somewhere, log it as a break from ${fmtTime(state.offerSince)}. It ends by itself when you drive off.</div>
+    <div class="btn-row"><button class="btn-primary" data-act="offer-break">Make it a break</button><button data-act="offer-no">Still in traffic</button></div></section>`;
+  return "";
+}
+
+// Under 12 mph for a minute opens an automatic slow point; 20 mph+ for 20 s closes it.
+function autoSlow(mph, t) {
+  const a = state.active, s = openSlow();
+  if (mph < 12) { highSince = null; lowSince ??= t;
+    if (!s && t - lowSince > 60000) { a.slow.push({ start: lowSince, end: null, reason: null, auto: true, lat: a.lastLat, lon: a.lastLon }); store.saveActive(); softRender(); }
+  } else if (mph >= 20) { lowSince = null; highSince ??= t;
+    if (s && s.auto && t - highSince > 20000) { s.end = highSince; store.saveActive(); softRender(); }
+  }
+}
+function toggleSlow() {
+  const a = state.active, s = openSlow(), now = Date.now();
+  if (s) { s.end = now; }
+  else { const b = openBreak(); if (b) b.end = now; a.slow.push({ start: now, end: null, reason: null, auto: false, lat: a.lastLat ?? null, lon: a.lastLon ?? null }); lowSince = null; }
+  store.saveActive(); render();
+}
+function toggleBreak() {
+  const a = state.active, b = openBreak(), now = Date.now();
+  if (b) b.end = now;
+  else { const s = openSlow(); if (s) s.end = now; a.breaks.push({ start: now, end: null }); }
+  store.saveActive(); render();
+}
+function setReason(r) {
+  const a = state.active; const s = openSlow() || a.slow[a.slow.length - 1]; if (!s) return;
+  s.reason = s.reason === r ? null : r; store.saveActive(); render();
+}
+async function finishDrive(form) {
+  const a = state.active, now = a.arrivedAt || Date.now();
+  a.slow = a.slow.filter((s) => s.start < now); a.breaks = a.breaks.filter((b) => b.start < now);
+  a.slow.forEach((s) => { if (!s.end || s.end > now) s.end = now; });
+  a.breaks.forEach((b) => { if (!b.end || b.end > now) b.end = now; });
+  const odoEnd = parseFloat(form.odoEnd.value), odoStart = parseFloat(form.odoStart.value);
+  let distance = parseFloat(form.distance.value);
+  if (!(distance > 0) && odoEnd > odoStart) distance = odoEnd - odoStart;
+  const trip = {
+    id: a.id, from: a.from, to: a.to, startedAt: a.startedAt, endedAt: now,
+    distance: distance > 0 ? Math.round(distance * 10) / 10 : 0,
+    distanceSource: parseFloat(form.distance.value) > 0 ? (Math.abs(distance - (a.gpsMiles || 0)) < 0.15 && a.gpsMiles ? "gps" : "manual") : (odoEnd > odoStart ? "odometer" : "none"),
+    gpsMiles: Math.round((a.gpsMiles || 0) * 10) / 10,
+    odoStart: odoStart || null, odoEnd: odoEnd || null,
+    slow: a.slow.filter((s) => s.end - s.start >= 5000), breaks: a.breaks.filter((b) => b.end - b.start >= 5000),
+    notes: form.notes.value.trim(), mpg: state.car.mpg, ppl: state.car.ppl, car: state.car.name,
+    startPhoto: a.startPhoto || null, endPhoto: state.endPhoto || null,
+    kind: a.kind || null,
+    track: a.recordRoute && a.track && a.track.length > 1 ? a.track : null,
+    fromCoords: a.fromCoords || null, endCoords: a.lastLat != null ? { lat: a.lastLat, lon: a.lastLon } : null,
+  };
+  const ok = await store.saveTrip(trip);
+  if (!ok) return;
+  stopLive(); state.active = null; state.ending = false; state.endPhoto = null; store.saveActive();
+  state.tab = "log"; state.detailId = trip.id; render();
+  toast("Drive saved");
+}
+function discardDrive() { stopLive(); state.active = null; state.ending = false; state.confirmDiscard = false; store.saveActive(); render(); toast("Drive discarded"); }
+
+function updateLive() {
+  const a = state.active; if (!a || state.tab !== "drive") return;
+  const st = stats(a), set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set("liveClock", fmtClock(st.total));
+  set("liveMoving", fmtDur(st.moving));
+  set("liveSlow", fmtDur(st.slow));
+  set("liveMiles", a.gpsMiles ? a.gpsMiles.toFixed(1) + " mi" : "–");
+  set("liveSpeed", state.gpsSpeed != null ? Math.round(state.gpsSpeed) + " mph" : "–");
+  set("liveCost", st.cost != null ? fmtMoney(st.cost) : "–");
+  const gl = document.getElementById("gpsText");
+  if (gl) { gl.textContent = gpsText(); document.getElementById("gpsDot").classList.toggle("on", state.gps === "on"); }
+  const tl = document.getElementById("liveTl"); if (tl) tl.innerHTML = timelineInner(a, st);
+  const s = openSlow(); if (s) set("slowFor", fmtDur(Date.now() - s.start));
+}
+function gpsText() {
+  return { on: "Location on: distance, speed, slow traffic and stops are tracked for you.", waiting: "Waiting for location…", unavailable: "Your location isn't available in this view, so stops, slow traffic and arrival can't be spotted for you. A passenger can log them, or you can add slow points after the drive.", off: "Location off" }[state.gps];
+}
+
+/* ---------- rendering ---------- */
+function timelineInner(t, st) {
+  const span = Math.max(1, st.end - t.startedAt);
+  const seg = (x, cls) => { const l = ((x.start - t.startedAt) / span) * 100, w = (((x.end || st.end) - x.start) / span) * 100; return `<span class="${cls}" style="left:${l.toFixed(2)}%;width:${Math.max(w, 0.6).toFixed(2)}%"></span>`; };
+  return (t.slow || []).map((s) => seg(s, "s")).join("") + (t.breaks || []).map((b) => seg(b, "b")).join("");
+}
+function timeline(t, st) {
+  return `<div class="tl" ${t.endedAt ? "" : 'id="liveTl"'} role="img" aria-label="Journey timeline: ${esc(fmtDur(st.slow))} slow, ${esc(fmtDur(st.brk))} stopped">${timelineInner(t, st)}</div>
+  <div class="tl-legend"><span><i style="background:color-mix(in srgb, var(--sign) 22%, var(--bg))"></i>Moving</span><span><i style="background:var(--amber-fill)"></i>Slow</span><span><i style="background:var(--brk)"></i>Stopped / break</span><span class="num">${fmtTime(t.startedAt)} – ${t.endedAt ? fmtTime(t.endedAt) : "now"}</span></div>`;
+}
+function places() {
+  const set = new Set(); state.trips.forEach((t) => { t.from && set.add(t.from.trim()); t.to && set.add(t.to.trim()); });
+  return [...set].slice(0, 40).map((p) => `<option value="${esc(p)}">`).join("");
+}
+
+function renderDrive() {
+  const a = state.active;
+  if (!a) {
+    const last = state.trips[0];
+    const regs = regulars();
+    return `${regs.length ? `<section class="panel">
+      <h2>Regular journeys</h2>
+      <div class="journeys">${regs.map((r) => `<button class="journey" data-act="quick" data-from="${esc(r.from)}" data-to="${esc(r.to)}" data-kind="${esc(r.kind || "")}"><b>${esc(r.kind || r.to || r.name)}</b><span>${esc(r.name)}</span>${r.expect ? `<span class="num">${esc(expectText(r.expect).replace(/ \(.*$/, ""))}</span>` : ""}</button>`).join("")}</div>
+      <div class="hint">One press starts the drive. Do it before you set off.</div>
+    </section>` : ""}
+    <section class="panel">
+      <h2>Start a drive</h2>
+      <form id="startForm" class="panel" style="padding:0;border:0;gap:12px">
+        <div class="ft">
+          <div class="field"><label for="from">From</label><input id="from" name="from" list="placesList" placeholder="Home" autocomplete="off" value="${esc(last ? last.to : "")}"></div>
+          <button type="button" class="btn-icon" data-act="swap" aria-label="Swap from and to">⇄</button>
+          <div class="field"><label for="to">To</label><input id="to" name="to" list="placesList" placeholder="Where to?" autocomplete="off"></div>
+        </div>
+        <div class="hint" id="expectMsg"></div>
+        <div class="field"><span class="label">What's this drive for? (optional)</span><div class="chips" id="kindChips">${KINDS.map((k) => `<button type="button" class="chip ${state.kind === k ? "on" : ""}" data-act="kind" data-k="${k}">${k}</button>`).join("")}</div></div>
+        <div class="here"><button type="button" class="btn-loc" data-act="here"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6.1-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.9 12 21 12 21Z"/><circle cx="12" cy="9.8" r="2.3"/></svg>Start from my location</button><span class="hint" id="hereMsg">Or type a postcode in From or To and it gets a name.</span></div>
+        <div class="field" id="pcBox" hidden><label for="postcode">Postcode where you are</label><div class="inline"><input id="postcode" autocapitalize="characters" autocomplete="postal-code" placeholder="e.g. RG4 7AB"><button type="button" data-act="pc-name">Use it</button></div></div>
+        <div class="field"><label for="odoStart">Mileage at start (optional)</label><div class="inline"><input id="odoStart" name="odoStart" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 48210">${photoBtn("start")}</div><div class="photo-status" id="photoStart"></div></div>
+        <datalist id="placesList">${places()}</datalist>
+        <label class="check"><input type="checkbox" id="recordRoute" checked><span>Record my route for a map<br><span class="hint">Your route stays private in your log. You choose what to share later.</span></span></label>
+        <button class="btn-primary btn-big" type="submit">Start drive</button>
+      </form>
+    </section>
+    <section class="panel">
+      <h2>How it works</h2>
+      <div class="muted" style="display:grid;gap:6px">
+        <div>Start the drive before you set off, then leave the phone in its mount. The clock keeps running if you switch apps or reload the page.</div>
+        <div>With location on, slow traffic, long stops and your arrival are spotted for you. Once you've stopped, it offers to log a break or end the journey. Breaks don't count as driving time.</div>
+        <div><b>Never use the phone while you're driving.</b> A passenger can log slow points and their causes, or you can add them after the drive.</div>
+        <div>Finish with the distance, or snap the mileage on the dashboard at the start and end, and the fuel cost is worked out from your car's MPG.</div>
+      </div>
+    </section>`;
+  }
+  const st = stats(a), s = openSlow(), b = openBreak();
+  const lastSlow = s || a.slow[a.slow.length - 1];
+  const status = s ? `<span class="state-chip slow">Slow for <span id="slowFor" class="num">${fmtDur(Date.now() - s.start)}</span></span>` : b ? `<span class="state-chip brk">On a break</span>` : `<span class="state-chip">Driving</span>`;
+  return `<section class="sign" aria-label="Current drive">
+    <div class="sign-in">
+      <div class="sign-route"><span>${esc(a.from || "Start")}</span><span class="arrow">→</span><span>${esc(a.to || "Somewhere")}</span></div>
+      ${status}
+      <div class="clock" id="liveClock">${fmtClock(st.total)}</div>
+      ${a.expect ? `<div class="sign-eta">${esc(a.expect.text)} · arrive about <b class="num">${fmtTime(a.startedAt + a.expect.ms + st.brk)}</b></div>` : ""}
+      <div class="sign-stats">
+        <span><span class="label">Moving</span> <b id="liveMoving">${fmtDur(st.moving)}</b></span>
+        <span><span class="label">Slow</span> <b id="liveSlow">${fmtDur(st.slow)}</b></span>
+        <span><span class="label">Dist</span> <b id="liveMiles">${a.gpsMiles ? a.gpsMiles.toFixed(1) + " mi" : "–"}</b></span>
+        <span><span class="label">Speed</span> <b id="liveSpeed">${state.gpsSpeed != null ? Math.round(state.gpsSpeed) + " mph" : "–"}</b></span>
+        <span><span class="label">Fuel so far</span> <b id="liveCost">${st.cost != null ? fmtMoney(st.cost) : "–"}</b></span>
+      </div>
+    </div>
+  </section>
+  ${renderOffer(a)}
+  <span class="label">For a passenger, or once you're parked</span>
+  <div class="controls">
+    <button class="btn-slow ${s ? "on" : ""}" data-act="slow">${s ? "Moving again" : "Slow"}</button>
+    <button class="btn-break ${b ? "on" : ""}" data-act="break">${b ? "Back on the road" : "Break"}</button>
+  </div>
+  ${lastSlow ? `<section class="panel" style="gap:10px">
+    <span class="label">${s ? "Why is it slow?" : `Last slow point · ${fmtTime(lastSlow.start)}`}</span>
+    <div class="chips">${REASONS.map((r) => `<button class="chip ${lastSlow.reason === r ? "on" : ""}" data-act="reason" data-r="${r}">${r}</button>`).join("")}</div>
+  </section>` : ""}
+  <section class="panel" style="gap:10px">
+    ${timeline(a, st)}
+    <div class="gps-line"><span class="dot ${state.gps === "on" ? "on" : ""}" id="gpsDot"></span><span id="gpsText">${gpsText()}</span></div>
+    ${state.gps === "on" && a.recordRoute ? `<div class="hint">Recording your route for the map.</div>` : ""}
+    ${state.gps === "on" ? `<label style="display:flex;gap:8px;align-items:center;font-size:.85rem"><input type="checkbox" id="autoSlow" style="width:auto" ${a.autoSlow ? "checked" : ""}> Mark slow points automatically (under 12 mph for a minute)</label>` : ""}
+  </section>
+  ${state.ending ? renderEndForm(a, st) : `<button class="btn-primary btn-big" data-act="end">Finish drive</button>`}`;
+}
+function renderEndForm(a, st) {
+  return `<form id="endForm" class="panel">
+    <h2>Finish drive</h2>
+    <div class="field"><label for="distance">Distance (miles)</label><input id="distance" name="distance" type="number" inputmode="decimal" step="0.1" min="0" value="${a.gpsMiles ? a.gpsMiles.toFixed(1) : ""}" placeholder="e.g. 23.4"></div>
+    <div class="field"><label for="odoStartE">Mileage at start</label><div class="inline"><input id="odoStartE" name="odoStart" type="number" inputmode="decimal" step="0.1" value="${a.odoStart ?? ""}">${a.startPhoto ? "" : photoBtn("start")}</div><div class="photo-status" id="photoStart">${a.startPhoto ? `<img class="thumb" src="/_blob/${esc(a.startPhoto)}" alt="Start mileage photo"><span>Photo from the start of the drive</span>` : ""}</div></div>
+    <div class="field"><label for="odoEnd">Mileage at end</label><div class="inline"><input id="odoEnd" name="odoEnd" type="number" inputmode="decimal" step="0.1">${photoBtn("end")}</div><div class="photo-status" id="photoEnd"></div></div>
+    <div class="muted" style="font-size:.82rem">With both mileage readings the distance fills itself in.</div>
+    <div class="field"><label for="notes">Notes</label><textarea id="notes" name="notes" placeholder="Scenic, quiet roads, long queue at the A34 junction…"></textarea></div>
+    <button class="btn-primary btn-big" type="submit">Save drive</button>
+    ${state.confirmDiscard ? `<div class="confirm"><div>Discard this drive? It won't be saved to your log.</div><div class="btn-row"><button type="button" class="btn-danger" data-act="discard-yes">Discard drive</button><button type="button" data-act="discard-no">Keep it</button></div></div>`
+      : `<div class="btn-row"><button type="button" data-act="end-cancel">Not finished yet</button><button type="button" class="btn-ghost btn-danger" data-act="discard">Discard</button></div>`}
+  </form>`;
+}
+
+function monthTotals() {
+  const now = new Date(), m = now.getMonth(), y = now.getFullYear();
+  const list = state.trips.filter((t) => { const d = new Date(t.startedAt); return d.getMonth() === m && d.getFullYear() === y; });
+  return list.reduce((acc, t) => { const st = stats(t); acc.n++; acc.miles += st.miles; acc.time += st.moving; acc.cost += st.cost || 0; return acc; }, { n: 0, miles: 0, time: 0, cost: 0 });
+}
+function tripRow(t) {
+  const st = stats(t);
+  return `<button class="trip" data-act="open" data-id="${esc(t.id)}">
+    <div class="trip-head"><span class="trip-route">${esc(routeName(t))} ${t.kind ? `<span class="tag">${esc(t.kind)}</span>` : ""} ${t.sample ? '<span class="tag">Sample</span>' : ""}</span><span class="trip-dur">${fmtDur(st.moving)}</span></div>
+    <div class="tl" aria-hidden="true">${timelineInner(t, st)}</div>
+    <div class="trip-meta"><span>${fmtDate(t.startedAt)} · ${fmtTime(t.startedAt)}</span><span class="num">${fmtMi(st.miles)}</span>${st.avg ? `<span class="num">${Math.round(st.avg)} mph avg</span>` : ""}${st.slow > 30000 ? `<span class="slow">${fmtDur(st.slow)} slow</span>` : ""}<span class="num">${fmtMoney(st.cost)}</span></div>
+  </button>`;
+}
+function renderLog() {
+  if (state.detailId) return renderDetail();
+  const mt = monthTotals();
+  const monthName = new Date().toLocaleDateString(undefined, { month: "long" });
+  const list = state.routeFilter ? state.trips.filter((t) => routeKey(t) === state.routeFilter) : state.trips;
+  return `<section class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h2>${esc(monthName)} so far</h2>${state.trips.length ? `<button class="btn-ghost" data-act="export">Export CSV</button>` : ""}</div>
+    <div class="stats">
+      <div class="stat"><span class="label">Drives</span><span class="v">${mt.n}</span></div>
+      <div class="stat"><span class="label">Miles</span><span class="v">${Math.round(mt.miles)}</span></div>
+      <div class="stat"><span class="label">At the wheel</span><span class="v">${fmtDur(mt.time).replace(/ \d+s$/, "")}</span></div>
+      <div class="stat"><span class="label">Fuel</span><span class="v">${fmtMoney(mt.cost)}</span></div>
+    </div>
+  </section>
+  <section class="panel" style="gap:0">
+    ${state.routeFilter ? `<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px"><span class="label">Filtered to one route</span><button class="btn-ghost" data-act="clear-filter">Show all</button></div>` : ""}
+    ${list.length ? list.map(tripRow).join("") : renderEmpty()}
+  </section>`;
+}
+function renderEmpty() {
+  return `<div class="empty">
+    <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 20 9 4M20 20 15 4M12 6v2M12 11v2M12 16v2"/></svg>
+    <div><b style="color:var(--ink)">${state.mode === "loading" ? "Loading your drives…" : "No drives yet"}</b><br>Each finished drive appears here with its time, distance, slow points and fuel cost.</div>
+    ${state.mode === "loading" ? "" : `<div class="btn-row"><button class="btn-primary" data-act="goto-drive">Start your first drive</button><button data-act="samples">Add sample drives</button></div>`}
+  </div>`;
+}
+function renderDetail() {
+  const t = state.trips.find((x) => x.id === state.detailId);
+  if (!t) { state.detailId = null; return renderLog(); }
+  const st = stats(t);
+  const others = state.trips.filter((x) => routeKey(x) === routeKey(t) && x.distance >= 0);
+  const avgOther = others.length > 1 ? sum(others, (x) => stats(x).moving) / others.length : null;
+  const cmp = avgOther ? st.moving - avgOther : null;
+  if (state.editing) return renderEdit(t);
+  return `<button class="btn-ghost" data-act="back" style="justify-self:start">← All drives</button>
+  <section class="panel">
+    <div style="display:grid;gap:4px"><span class="label">${fmtDate(t.startedAt)} · ${fmtTime(t.startedAt)}–${fmtTime(t.endedAt)}${t.sample ? " · Sample" : ""}</span><h2 style="font-size:1.35rem">${esc(routeName(t))}</h2></div>
+    <div class="stats">
+      <div class="stat"><span class="label">Driving</span><span class="v">${fmtDur(st.moving)}</span></div>
+      <div class="stat"><span class="label">Distance</span><span class="v">${fmtMi(st.miles)}</span></div>
+      <div class="stat"><span class="label">Avg speed</span><span class="v">${st.avg ? Math.round(st.avg) + " mph" : "–"}</span></div>
+      <div class="stat"><span class="label">Fuel</span><span class="v">${fmtMoney(st.cost)}</span></div>
+    </div>
+    ${timeline(t, st)}
+    <div class="trip-meta">
+      ${st.litres != null ? `<span class="num">${st.litres.toFixed(1)} L at ${t.ppl}p/L, ${t.mpg} mpg</span>` : `<span>Add a distance to estimate fuel</span>`}
+      ${st.brk ? `<span>${fmtDur(st.brk)} on breaks</span>` : ""}
+      ${cmp != null ? `<span style="color:${cmp > 0 ? "var(--bad)" : "var(--good)"}">${fmtDur(Math.abs(cmp))} ${cmp > 0 ? "slower" : "quicker"} than your usual on this route</span>` : ""}
+    </div>
+    ${t.notes ? `<div style="white-space:pre-wrap">${esc(t.notes)}</div>` : ""}
+    ${t.startPhoto || t.endPhoto ? `<div class="photos">${[["startPhoto", "Start", t.odoStart], ["endPhoto", "End", t.odoEnd]].map(([k, l, v]) => t[k] ? `<figure><img src="/_blob/${esc(t[k])}" alt="${l} mileage photo" loading="lazy"><figcaption>${l}${v ? ` · <span class="num">${Number(v).toLocaleString()}</span>` : ""}</figcaption></figure>` : "<span></span>").join("")}</div>` : ""}
+  </section>
+  ${renderRoute(t)}
+  <section class="panel">
+    <h2>Slow points <span class="muted num" style="font-weight:400">${t.slow.length ? "· " + fmtDur(st.slow) + " total" : ""}</span></h2>
+    ${t.slow.length ? `<div class="slow-list">${t.slow.map((s) => `<div class="slow-item"><span class="num muted">${fmtTime(s.start)}</span><span><b>${esc(s.reason || (s.auto ? "Slow traffic" : "Slow"))}</b>${s.auto ? ' <span class="tag">Auto</span>' : ""}${s.lat != null ? ` · <a href="https://www.google.com/maps?q=${s.lat},${s.lon}" target="_blank" rel="noopener">Map</a>` : ""}</span><span class="num" style="color:var(--amber);font-weight:600">${fmtDur(s.end - s.start)}</span></div>`).join("")}</div>` : `<div class="muted">No slow points logged. If you remember any, add them with Edit.</div>`}
+  </section>
+  ${state.confirmDel ? `<div class="confirm"><div>Delete this drive from your log? This can't be undone.</div><div class="btn-row"><button class="btn-danger" data-act="del-yes">Delete drive</button><button data-act="del-no">Keep it</button></div></div>`
+    : `<div class="btn-row"><button data-act="edit">Edit or add slow points</button><button data-act="again">Drive this route again</button><button class="btn-danger" data-act="del">Delete</button></div>`}`;
+}
+function renderEdit(t) {
+  return `<button class="btn-ghost" data-act="cancel-edit" style="justify-self:start">← Back</button>
+  <form id="editForm" class="panel">
+    <h2>Edit drive</h2>
+    <div class="row"><div class="field"><label for="eFrom">From</label><input id="eFrom" name="from" list="placesList2" value="${esc(t.from)}"></div>
+    <div class="field"><label for="eTo">To</label><input id="eTo" name="to" list="placesList2" value="${esc(t.to)}"></div></div>
+    <div class="field"><label for="eKind">What it was for</label><select id="eKind" name="kind"><option value="">Not set</option>${KINDS.map((k) => `<option ${t.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select></div>
+    <datalist id="placesList2">${places()}</datalist>
+    <div class="row3">
+      <div class="field"><label for="eDist">Miles</label><input id="eDist" name="distance" type="number" step="0.1" min="0" value="${t.distance || ""}"></div>
+      <div class="field"><label for="eMpg">MPG used</label><input id="eMpg" name="mpg" type="number" step="0.1" min="1" value="${t.mpg}"></div>
+      <div class="field"><label for="ePpl">Pence / litre</label><input id="ePpl" name="ppl" type="number" step="0.1" min="1" value="${t.ppl}"></div>
+    </div>
+    <div class="field"><span class="label">Slow points</span>
+      ${t.slow.length ? `<div>${t.slow.map((x, i) => `<label class="slow-edit"><input type="checkbox" name="keep" value="${i}" checked><span class="num muted">${fmtTime(x.start)}</span><span>${esc(x.reason || "Slow")}</span><span class="num" style="margin-left:auto">${fmtDur(x.end - x.start)}</span></label>`).join("")}</div><div class="hint">Untick any to remove them.</div>` : ""}
+    </div>
+    <div class="field"><span class="label">Add a slow point you remember</span>
+      <div class="row3">
+        <div class="field"><label for="sAt">Started at</label><input id="sAt" name="sAt" type="time"></div>
+        <div class="field"><label for="sMin">Minutes</label><input id="sMin" name="sMin" type="number" inputmode="numeric" min="1" step="1"></div>
+        <div class="field"><label for="sWhy">Reason</label><select id="sWhy" name="sWhy">${REASONS.map((r) => `<option>${r}</option>`).join("")}</select></div>
+      </div>
+    </div>
+    <div class="field"><label for="eNotes">Notes</label><textarea id="eNotes" name="notes">${esc(t.notes)}</textarea></div>
+    <button class="btn-primary btn-big" type="submit">Save changes</button>
+  </form>`;
+}
+
+function topRoutes() {
+  const map = new Map();
+  state.trips.forEach((t) => { const k = routeKey(t); if (!map.has(k)) map.set(k, { key: k, name: routeName(t), trips: [] }); map.get(k).trips.push(t); });
+  return [...map.values()].sort((a, b) => b.trips.length - a.trips.length || b.trips[0].startedAt - a.trips[0].startedAt);
+}
+function renderRoutes() {
+  const routes = topRoutes();
+  if (!routes.length) return `<section class="panel">${renderEmpty()}</section>`;
+  return `<section class="panel"><div style="display:grid;gap:4px"><h2>Your routes</h2><div class="muted" style="font-size:.88rem">Drives grouped by where they start and end. Each bar is one run, oldest first, with slow time in amber and your quickest run in green.</div></div>
+  ${routes.map((r) => {
+    const runs = r.trips.slice().reverse().map((t) => ({ t, st: stats(t) }));
+    const times = runs.map((x) => x.st.moving), max = Math.max(...times, 1), min = Math.min(...times);
+    const avg = sum(times, (x) => x) / times.length;
+    const avgSlow = sum(runs, (x) => x.st.slow) / runs.length;
+    const costs = runs.map((x) => x.st.cost).filter((c) => c != null);
+    const reasons = {}; runs.forEach((x) => x.t.slow.forEach((s) => { const k = s.reason || "Unlabelled"; reasons[k] = (reasons[k] || 0) + (s.end - s.start); }));
+    const topReason = Object.entries(reasons).sort((a, b) => b[1] - a[1])[0];
+    return `<div class="route">
+      <div class="route-head"><b>${esc(r.name)}</b><span class="muted" style="font-size:.84rem">${r.trips.length} drive${r.trips.length > 1 ? "s" : ""}</span></div>
+      <div class="bars" role="img" aria-label="Duration of each drive on this route">${runs.slice(-24).map((x) => `<span class="${runs.length > 1 && x.st.moving === min ? "best" : ""}" style="height:${((x.st.moving / max) * 100).toFixed(1)}%" title="${fmtDate(x.t.startedAt)}: ${fmtDur(x.st.moving)}"><span class="sl" style="height:${x.st.moving ? ((x.st.slow / x.st.moving) * 100).toFixed(1) : 0}%"></span></span>`).join("")}</div>
+      <div class="kv">
+        <div><span class="label">Typical</span><b>${fmtDur(avg)}</b></div>
+        <div><span class="label">Quickest</span><b>${fmtDur(min)}</b></div>
+        <div><span class="label">Slowest</span><b>${fmtDur(max)}</b></div>
+        <div><span class="label">Fuel avg</span><b>${costs.length ? fmtMoney(sum(costs, (c) => c) / costs.length) : "–"}</b></div>
+      </div>
+      <div class="trip-meta">${avgSlow > 15000 ? `<span class="slow">${fmtDur(avgSlow)} slow on average</span>` : `<span>Usually a clear run</span>`}${topReason && avgSlow > 15000 ? `<span>Mostly ${esc(topReason[0].toLowerCase())}</span>` : ""}</div>
+      ${insights(r.trips)}
+      <div class="btn-row"><button data-act="route-log" data-key="${esc(r.key)}">See drives</button><button data-act="quick" data-from="${esc(r.trips[0].from || "")}" data-to="${esc(r.trips[0].to || "")}">Drive it now</button></div>
+    </div>`;
+  }).join("")}</section>`;
+}
+
+const holRow = ([a, b]) => `<div class="hol-row"><input type="date" name="holStart" value="${esc(a)}" aria-label="Holiday starts"><span class="muted">to</span><input type="date" name="holEnd" value="${esc(b)}" aria-label="Holiday ends"><button type="button" class="btn-ghost" data-act="hol-del" aria-label="Remove this holiday">✕</button></div>`;
+function renderCar() {
+  const c = state.car;
+  const perMile = c.mpg && c.ppl ? (LITRES_PER_UK_GALLON / c.mpg) * c.ppl : null;
+  return `<form id="carForm" class="panel">
+    <h2>Your car</h2>
+    <div class="field"><label for="carName">Name</label><input id="carName" name="name" value="${esc(c.name)}" placeholder="e.g. Golf 1.5 TSI"></div>
+    <div class="row3">
+      <div class="field"><label for="carFuel">Fuel</label><select id="carFuel" name="fuel">${["Petrol", "Diesel", "Hybrid", "LPG"].map((f) => `<option ${c.fuel === f ? "selected" : ""}>${f}</option>`).join("")}</select></div>
+      <div class="field"><label for="carMpg">MPG (UK)</label><input id="carMpg" name="mpg" type="number" step="0.1" min="1" required value="${c.mpg}"></div>
+      <div class="field"><label for="carPpl">Pence / litre</label><input id="carPpl" name="ppl" type="number" step="0.1" min="1" required value="${c.ppl}"></div>
+    </div>
+    <div class="muted" style="font-size:.85rem">Use the real-world MPG from your trip computer rather than the brochure figure. Update the price when you fill up. Saved drives keep the price they were logged with.</div>
+    <div class="panel" style="background:var(--bg)">
+      <div class="stats" style="grid-template-columns:repeat(3,1fr)">
+        <div class="stat"><span class="label">Per mile</span><span class="v">${perMile ? perMile.toFixed(1) + "p" : "–"}</span></div>
+        <div class="stat"><span class="label">Per 100 mi</span><span class="v">${perMile ? fmtMoney(perMile) : "–"}</span></div>
+        <div class="stat"><span class="label">L / 100 km</span><span class="v">${c.mpg ? (282.481 / c.mpg).toFixed(1) : "–"}</span></div>
+      </div>
+    </div>
+    <div class="field"><span class="label">School holidays</span>
+      <div class="hint">Used to compare drives in term time and the holidays. These are typical dates for England, so edit them to match your council. Bank holidays are built in.</div>
+      <div id="holList" style="display:grid;gap:6px">${(c.holidays || []).map(holRow).join("")}</div>
+      <button type="button" data-act="hol-add" style="justify-self:start">Add a holiday</button>
+    </div>
+    <button class="btn-primary btn-big" type="submit">Save car</button>
+  </form>
+  <section class="panel" style="gap:8px">
+    <h2>Where your drives are kept</h2>
+    <div class="muted" style="font-size:.88rem">${state.mode === "cloud" ? "Your drives are saved to your Claude account, privately. Nobody else who opens this page can see them, and they're on any device where you open it." : (IN_CLAUDE ? "Your drives are saved in this browser only. Open this page while signed in to Claude to keep them in your account." : "Your drives are saved in this browser on this device. Use Export CSV on the Log tab now and then to keep a copy.")}</div>
+    ${state.trips.some((t) => t.sample) ? `<button class="btn-danger" data-act="clear-samples">Remove sample drives</button>` : ""}
+  </section>`;
+}
+
+// Background updates skip re-rendering while someone is typing in a form, so their input isn't wiped.
+function softRender() {
+  const f = document.activeElement;
+  if (f && f.form && f.matches("input, textarea, select")) return;
+  render();
+}
+function render() {
+  const pill = $("#storePill");
+  pill.textContent = { loading: "Connecting…", cloud: "Saved to your account", local: "Saved on this device" }[state.mode];
+  document.querySelectorAll("nav.tabs button").forEach((b) => b.dataset.tab === state.tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
+  $("#liveDot").hidden = !state.active;
+  const v = $("#view");
+  v.style.display = "grid"; v.style.gap = "14px";
+  v.innerHTML = state.tab === "drive" ? renderDrive() : state.tab === "log" ? renderLog() : state.tab === "routes" ? renderRoutes() : renderCar();
+  if (state.tab === "drive" && !state.active) updateExpect();
+}
+
+/* ---------- samples (clearly marked, removable) ---------- */
+async function addSamples() {
+  const day = 86400000, base = new Date(); base.setHours(8, 5, 0, 0);
+  const mk = (daysAgo, mins, miles, from, to, slow, notes, kind = null, hh = 8, mm = 5) => {
+    const d = new Date(base.getTime() - daysAgo * day); d.setHours(hh, mm, 0, 0); const s = d.getTime();
+    return { id: "sample-" + daysAgo, sample: true, from, to, startedAt: s, endedAt: s + mins * 60000, distance: miles, distanceSource: "manual",
+      slow: slow.map(([at, len, reason]) => ({ start: s + at * 60000, end: s + (at + len) * 60000, reason, auto: false, lat: null, lon: null })),
+      breaks: [], notes, kind, mpg: state.car.mpg, ppl: state.car.ppl, car: state.car.name };
+  };
+  const samples = [
+    mk(1, 38, 21.6, "Home", "Office", [[9, 7, "Traffic"], [27, 3, "Roadworks"]], "Sample drive. Queue at the ring road roundabout.", "Commute"),
+    mk(3, 29, 21.4, "Home", "Office", [[11, 2, "Junction"]], "Sample drive.", "Commute"),
+    mk(8, 41, 21.5, "Home", "Office", [[8, 10, "Traffic"]], "Sample drive.", "Commute", 8, 20),
+    mk(9, 26, 21.4, "Home", "Office", [], "Sample drive. Left early.", "Commute", 6, 40),
+    mk(10, 27, 21.6, "Home", "Office", [[12, 1, "Junction"]], "Sample drive. Left early.", "Commute", 6, 45),
+    mk(6, 74, 58.2, "Home", "Coast", [[40, 9, "Traffic"]], "Sample drive. Coffee at the services would go under Break."),
+  ];
+  for (const t of samples) await store.saveTrip(t);
+  toast("Added sample drives");
+  render();
+}
+
+/* ---------- export ---------- */
+async function exportCsv() {
+  const head = ["Date", "Start", "End", "From", "To", "Miles", "Driving (min)", "Slow (min)", "Breaks (min)", "Slow points", "Avg mph", "Litres", "Fuel £", "Notes"];
+  const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = state.trips.filter((t) => !t.sample).map((t) => { const st = stats(t);
+    return [new Date(t.startedAt).toISOString().slice(0, 10), fmtTime(t.startedAt), fmtTime(t.endedAt), t.from, t.to, st.miles || "", Math.round(st.moving / 60000), Math.round(st.slow / 60000), Math.round(st.brk / 60000),
+      t.slow.map((s) => `${fmtTime(s.start)} ${s.reason || "Slow"} ${Math.round((s.end - s.start) / 60000)}m`).join("; "), st.avg ? st.avg.toFixed(1) : "", st.litres != null ? st.litres.toFixed(2) : "", st.cost != null ? st.cost.toFixed(2) : "", t.notes].map(q).join(","); });
+  try { await saveFile("drive-log.csv", [head.map(q).join(","), ...rows].join("\n")); }
+  catch (e) { if (e && e.code !== "declined") toast("Couldn't export the log."); }
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", async (e) => {
+  const tabBtn = e.target.closest("[data-tab]");
+  if (tabBtn) { state.tab = tabBtn.dataset.tab; state.detailId = null; state.editing = state.confirmDel = false; render(); window.scrollTo(0, 0); return; }
+  const el = e.target.closest("[data-act]"); if (!el) return;
+  const act = el.dataset.act;
+  switch (act) {
+    case "swap": { const f = $("#from"), t = $("#to"); [f.value, t.value] = [t.value, f.value]; break; }
+    case "quick": if (state.active) { state.tab = "drive"; render(); break; } state.kind = el.dataset.kind || null; startDrive(el.dataset.from, el.dataset.to, null); state.tab = "drive"; render(); break;
+    case "kind": state.kind = state.kind === el.dataset.k ? null : el.dataset.k; document.querySelectorAll("#kindChips .chip").forEach((c) => c.classList.toggle("on", c.dataset.k === state.kind)); break;
+    case "hol-add": { const box = $("#holList"); box.insertAdjacentHTML("beforeend", holRow(["", ""])); break; }
+    case "hol-del": el.closest(".hol-row").remove(); break;
+    case "here": startFromHere(); break;
+    case "pc-name": { const pc = $("#postcode").value.trim(), msg = $("#hereMsg");
+      if (!POSTCODE.test(pc)) { msg.className = "hint warn"; msg.textContent = "That doesn't look like a postcode. Try something like RG4 7AB."; break; }
+      msg.className = "hint"; msg.textContent = "Looking up " + tidyPostcode(pc) + "…";
+      const name = await placeName({ postcode: pc }); $("#from").value = name || tidyPostcode(pc); $("#pcBox").hidden = true;
+      msg.textContent = name && name !== tidyPostcode(pc) ? "Named from the postcode. Edit it if you like." : "Postcode added. Type a name for it if you like."; break; }
+    case "slow": toggleSlow(); break;
+    case "break": toggleBreak(); break;
+    case "reason": setReason(el.dataset.r); break;
+    case "end": state.ending = true; render(); $("#distance")?.focus(); break;
+    case "end-cancel": state.ending = false; if (state.active) { delete state.active.arrivedAt; store.saveActive(false); } render(); break;
+    case "offer-end": state.active.arrivedAt = state.offerSince; state.offer = null; state.dismissed = "arrive"; state.ending = true; store.saveActive(false); render(); break;
+    case "offer-break": { const a = state.active, at = state.offerSince;
+      a.slow = a.slow.filter((x) => x.start < at); a.slow.forEach((x) => { if (!x.end || x.end > at) x.end = at; });
+      a.breaks.push({ start: at, end: null }); state.offer = null; state.dismissed = "break"; store.saveActive(); render(); break; }
+    case "offer-no": state.dismissed = state.offer; state.offer = null; render(); break;
+    case "discard": state.confirmDiscard = true; render(); break;
+    case "discard-no": state.confirmDiscard = false; render(); break;
+    case "discard-yes": discardDrive(); break;
+    case "open": state.detailId = el.dataset.id; state.confirmDel = state.editing = false; render(); window.scrollTo(0, 0); break;
+    case "back": state.detailId = null; render(); break;
+    case "edit": state.editing = true; render(); break;
+    case "cancel-edit": state.editing = false; render(); break;
+    case "del": state.confirmDel = true; render(); break;
+    case "del-no": state.confirmDel = false; render(); break;
+    case "del-yes": { const t = state.trips.find((x) => x.id === state.detailId); const as = await getAssets();
+      if (as && t) for (const id of [t.startPhoto, t.endPhoto]) if (id) as.delete(id).catch(() => {}); }
+      await store.deleteTrip(state.detailId); state.detailId = null; state.confirmDel = false; render(); toast("Drive deleted"); break;
+    case "again": { const t = state.trips.find((x) => x.id === state.detailId); if (state.active) { toast("Finish your current drive first."); break; } state.tab = "drive"; state.detailId = null; startDrive(t.from, t.to, null); break; }
+    case "route-log": state.routeFilter = el.dataset.key; state.tab = "log"; state.detailId = null; render(); break;
+    case "clear-filter": state.routeFilter = null; render(); break;
+    case "goto-drive": state.tab = "drive"; render(); break;
+    case "samples": el.disabled = true; await addSamples(); break;
+    case "clear-samples": for (const t of state.trips.filter((x) => x.sample)) await store.deleteTrip(t.id); render(); toast("Sample drives removed"); break;
+    case "export": exportCsv(); break;
+    case "share-png": sharePng(state.trips.find((x) => x.id === state.detailId)); break;
+    case "share-json": shareJson(state.trips.find((x) => x.id === state.detailId)); break;
+    case "share-link": { const link = mapsLink(state.trips.find((x) => x.id === state.detailId)), msg = $("#shareMsg"); if (!link) break;
+      msg.innerHTML = `<a href="${esc(link)}" target="_blank" rel="noopener">Open in Google Maps</a> · <input readonly value="${esc(link)}" aria-label="Google Maps link" style="margin-top:6px">`;
+      navigator.clipboard.writeText(link).then(() => toast("Link copied"), () => { const i = msg.querySelector("input"); i.focus(); i.select(); }); break; }
+  }
+});
+document.addEventListener("input", (e) => { if (e.target.id === "from" || e.target.id === "to") updateExpect(); });
+document.addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.dataset.photo && t.files && t.files[0]) { handlePhoto(t.dataset.photo, t.files[0]); t.value = ""; return; }
+  if (t.id === "from" || t.id === "to") nameField(t, $("#hereMsg")).then(updateExpect);
+  if (t.id === "odoStartE" || t.id === "odoEnd") fillDistanceFromMileage();
+  if (t.id === "distance") t.dataset.auto = "";
+  if (t.id === "shareTrim") { state.shareTrim = t.checked; render(); return; }
+  if (t.id === "autoSlow" && state.active) { state.active.autoSlow = t.checked; store.saveActive(); }
+});
+document.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  if (f.id === "startForm") {
+    if (state.active) return;
+    startDrive(f.from.value.trim(), f.to.value.trim(), parseFloat(f.odoStart.value) || null);
+    if (state.photoReading) toast("Still reading the mileage photo. It'll be added to this drive.");
+  } else if (f.id === "endForm") {
+    f.querySelector('[type="submit"]').disabled = true;
+    await finishDrive(f);
+    const b = f.querySelector('[type="submit"]'); if (b) b.disabled = false;
+  } else if (f.id === "carForm") {
+    const hs = [...f.querySelectorAll('[name="holStart"]')], he = [...f.querySelectorAll('[name="holEnd"]')];
+    const holidays = hs.map((x, i) => [x.value, he[i].value || x.value]).filter(([a]) => a).map(([a, b]) => (a <= b ? [a, b] : [b, a])).sort();
+    await store.saveCar({ name: f.name.value.trim() || "My car", fuel: f.fuel.value, mpg: parseFloat(f.mpg.value), ppl: parseFloat(f.ppl.value), holidays });
+    render(); toast("Car saved");
+  } else if (f.id === "editForm") {
+    const t = state.trips.find((x) => x.id === state.detailId);
+    const keep = new Set([...f.querySelectorAll('input[name="keep"]:checked')].map((x) => +x.value));
+    const slow = t.slow.filter((_, i) => keep.has(i));
+    const mins = parseFloat(f.sMin.value);
+    if (f.sAt.value && mins > 0) {
+      const [h, m] = f.sAt.value.split(":").map(Number), d = new Date(t.startedAt); d.setHours(h, m, 0, 0);
+      let at = d.getTime(); if (at < t.startedAt - 3600000) at += 86400000; // drives past midnight
+      at = Math.min(Math.max(at, t.startedAt), t.endedAt - 60000);
+      slow.push({ start: at, end: Math.min(at + mins * 60000, t.endedAt), reason: f.sWhy.value, auto: false, added: true, lat: null, lon: null });
+    }
+    slow.sort((x, y) => x.start - y.start);
+    const upd = { ...t, slow, kind: f.kind.value || null, from: f.from.value.trim(), to: f.to.value.trim(), distance: parseFloat(f.distance.value) || 0, mpg: parseFloat(f.mpg.value) || t.mpg, ppl: parseFloat(f.ppl.value) || t.ppl, notes: f.notes.value.trim() };
+    if (await store.saveTrip(upd)) { state.editing = false; render(); toast("Changes saved"); }
+  }
+});
+
+render();
+store.init();
+})();
+</script>
+
+</body>
+</html>
