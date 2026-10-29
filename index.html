@@ -371,10 +371,28 @@ const getAssets = () => (assetsP ??= useCap("assets"));
 const POSTCODE = /^([A-Z]{1,2}\d[A-Z\d]?)(\s*\d[A-Z]{2})?$/i;
 const tidyPostcode = (pc) => { const c = pc.toUpperCase().replace(/\s+/g, ""); return c.length > 4 ? c.slice(0, -3) + " " + c.slice(-3) : c; };
 
-// Ask Claude for a short, recognisable name for a postcode or coordinates. Falls back to the postcode itself.
+// postcodes.io: free UK postcode lookup. Works on the standalone site; the Claude viewer blocks it, so Claude names places there.
+async function postcodesIo(path) {
+  try {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 5000);
+    const r = await fetch("https://api.postcodes.io/" + path, { signal: ctl.signal }); clearTimeout(timer);
+    if (!r.ok) return null;
+    const j = await r.json(), x = Array.isArray(j.result) ? j.result[0] : j.result;
+    if (!x) return null;
+    const area = x.parish && !/unparished/i.test(x.parish) ? x.parish.replace(/,.*$/, "") : x.admin_ward;
+    const name = [area, x.admin_district].filter((v, i, arr) => v && arr.indexOf(v) === i).join(", ");
+    return { name, postcode: x.postcode, lat: x.latitude, lon: x.longitude };
+  } catch { return null; }
+}
+const lookupPostcode = (pc) => postcodesIo("postcodes/" + encodeURIComponent(tidyPostcode(pc).replace(" ", "")));
+const lookupCoords = (lat, lon) => postcodesIo(`postcodes?lat=${lat}&lon=${lon}&limit=1&radius=2000`);
+
+// A short, recognisable name for a postcode or coordinates: postcodes.io first, then Claude, then the postcode itself.
 async function placeName({ postcode, lat, lon }) {
-  const sample = await getSample();
   const pc = postcode ? tidyPostcode(postcode) : null;
+  const hit = pc ? (POSTCODE.test(pc) && pc.includes(" ") ? await lookupPostcode(pc) : null) : await lookupCoords(lat, lon);
+  if (hit && hit.name) return `${hit.name} (${pc || hit.postcode})`;
+  const sample = await getSample();
   if (!sample) return pc;
   try {
     const r = await sample.json(
@@ -738,6 +756,8 @@ async function resolveDest(a) {
   if (past) { a.destCoords = { ...past.endCoords, exact: true }; store.saveActive(false); return; }
   const m = (a.to.match(/\(([^)]+)\)\s*$/) || [])[1] || a.to;
   if (!POSTCODE.test(m.trim())) return;
+  const hit = tidyPostcode(m.trim()).includes(" ") ? await lookupPostcode(m.trim()) : null;
+  if (hit && state.active === a) { a.destCoords = { lat: hit.lat, lon: hit.lon, exact: true }; store.saveActive(false); return; }
   const sample = await getSample(); if (!sample) return;
   try {
     const r = await sample.json(`Give the approximate centre of the UK postcode ${tidyPostcode(m.trim())} as JSON only: {"lat": <number>, "lon": <number>}, or {"lat": null, "lon": null} if you don't know it.`, { modelTier: "quick" });
