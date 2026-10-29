@@ -52,6 +52,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 10px 14px; font-weight: 600; }
 button:disabled { opacity: .5; cursor: default; }
 .btn-primary { background: var(--sign); color: var(--sign-ink); border-color: var(--sign); }
+a.btn { display: block; text-align: center; text-decoration: none; border-radius: 8px; border: 1px solid var(--sign); padding: 12px 14px; font-weight: 600; }
 .btn-big { padding: 15px 16px; font-size: 1.05rem; width: 100%; }
 .btn-danger { color: var(--bad); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); padding: 6px 8px; }
@@ -763,6 +764,16 @@ async function resolveDest(a) {
     if (r && Number.isFinite(r.lat) && Number.isFinite(r.lon) && state.active === a) { a.destCoords = { lat: r.lat, lon: r.lon, exact: false }; store.saveActive(false); }
   } catch {}
 }
+// Directions to where this drive is going, in Apple Maps on an iPhone or iPad and Google Maps elsewhere; each opens its app if installed.
+// Only a real location is used (where this destination's past drives ended, or a postcode): a nickname like "School" would send Maps astray.
+function navLink(a) {
+  const to = (a.to || "").trim(), key = to.toLowerCase(), pc = ((to.match(/\(([^)]+)\)\s*$/) || [])[1] || to).trim();
+  const d = a.destCoords || (key && state.trips.find((t) => (t.to || "").trim().toLowerCase() === key && t.endCoords)?.endCoords);
+  const dest = d ? `${d.lat},${d.lon}` : POSTCODE.test(pc) ? tidyPostcode(pc) : null;
+  if (!dest) return null;
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+    ? `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}&dirflg=d` : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}&travelmode=driving`;
+}
 function renderOffer(a) {
   if (state.offer === "arrive") return `<section class="offer" aria-live="polite">
     <h2>Looks like you've arrived${a.to ? " at " + esc(a.to) : ""}</h2>
@@ -926,6 +937,7 @@ function renderDrive() {
   ${showTimer ? "" : `<section class="offer eyes">
     <h2>Eyes on the road</h2>
     <div class="muted">Switch to your music or maps app now. Drive Log keeps timing while you're away, and catches up on distance when you come back to it.</div>
+    ${navLink(a) ? `<a class="btn btn-primary" href="${esc(navLink(a))}" target="_blank" rel="noopener">Open directions${a.to ? " to " + esc(a.to) : ""} in Maps</a><div class="hint">Do this before you pull away.</div>` : ""}
     <div class="hint">While another app is in front, Drive Log may not spot stops or slow traffic.</div>
     <button class="btn-ghost" data-act="show-timer" style="justify-self:start">Show the timer (passenger)</button>
   </section>`}
