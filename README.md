@@ -11,9 +11,9 @@ Time your drives, see where you got held up, and know what each journey costs in
 - **Share on WhatsApp.** Send your ETA before you set off, or a summary of a finished drive with a link to the route.
 - **Route map.** Records the path you drove. Sharing it (an image, a GeoJSON file or a Google Maps link) can hide the mile around the start and finish, plus postcodes and times, so the route doesn't reveal where you live or work.
 - **Insights per route.** Typical, quickest and slowest times, broken down by the time you set off, the day of the week, and term time versus school and bank holidays.
-- **Several cars.** Pick the car when you start a drive. Each one has its own MPG and fuel price, and **Estimate MPG** gives a typical real-world figure if you don't know yours.
-- **Someone else's car.** Pick it when you're driving a car that isn't yours. The drive logs time and route only, with no fuel cost and nothing to set up.
-- **Fuel tracking.** Photograph the receipt at each fill-up and the litres, price and total are filled in for you. Fill to the brim and note the mileage, and it works out your real MPG and cost per mile. Your latest price feeds straight into the fuel cost of each drive.
+- **Several vehicles, electric too.** Pick the vehicle under More options, or after the drive. Each has its own MPG (or miles per kWh) and price, an optional number plate shown as a plate badge, and **Estimate for this vehicle** gives a typical real-world figure if you don't know yours.
+- **Someone else's vehicle.** Pick it when you're driving one that isn't yours. The drive logs time and route only, with no fuel cost and nothing to set up.
+- **Fuel and charging.** Photograph the receipt (or charger screen) at each fill-up or charge and the litres, price and total are filled in for you. Fill to the brim and note the mileage, and it works out your real MPG and cost per mile. Your latest price feeds straight into the fuel cost of each drive.
 - **Photos instead of typing.** Dashboard mileage and fuel receipts can be photographed. On this site the text is read on your phone (Tesseract), so check the numbers. In the Claude-hosted version, Claude reads them.
 
 Never use the phone while driving. Set the drive up before you go, leave the phone in its mount, and add anything you missed once you've parked.
