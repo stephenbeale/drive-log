@@ -163,6 +163,10 @@ button:disabled { opacity: .5; cursor: default; }
 .car-row.on .car-go { color: var(--muted); font-weight: 400; }
 
 .btn-link { display: inline-flex; justify-content: center; align-items: center; gap: 8px; text-decoration: none; font-weight: 600; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 10px 14px; }
+details.eta-note > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: .85rem; color: var(--muted); margin-top: 4px; }
+details.eta-note > summary::-webkit-details-marker { display: none; }
+details.eta-note .chev-btn { width: 28px; height: 28px; }
+details.eta-note[open] > summary { margin-bottom: 8px; }
 .send-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; }
 .send-row .btn-link { padding: 10px 6px; font-size: .9rem; gap: 6px; }
 .send-row .ico { width: 18px; height: 18px; }
@@ -312,7 +316,7 @@ const formatPlate = (p) => { const c = String(p || "").toUpperCase().replace(/[^
 const plateHtml = (c, size = "") => c && c.plate ? `<span class="plate ${isEV(c) ? "ev" : ""} ${size}" aria-label="Number plate ${esc(c.plate)}"><span class="plate-band">UK</span><span class="plate-txt">${esc(c.plate)}</span></span>` : "";
 // Settings: every car, which one new drives use, and school holidays. Older saves held a single car's fields at the top level.
 function normaliseSettings(raw = {}) {
-  const st = { holidays: raw.holidays || DEFAULT_HOLIDAYS, currentCarId: raw.currentCarId, cars: Array.isArray(raw.cars) ? raw.cars.slice() : [] };
+  const st = { holidays: raw.holidays || DEFAULT_HOLIDAYS, etaNote: raw.etaNote || "", currentCarId: raw.currentCarId, cars: Array.isArray(raw.cars) ? raw.cars.slice() : [] };
   if (!st.cars.length) st.cars = [{ id: "car1", name: raw.name || "My vehicle", fuel: raw.fuel || "Petrol", mpg: raw.mpg || 45, ppl: raw.ppl || 136.9 }];
   if (!st.cars.some((c) => c.id === st.currentCarId)) st.currentCarId = st.cars[0].id;
   return st;
@@ -1188,7 +1192,20 @@ function roughEta(a) {
   const miles = haversineMiles({ lat: a.lastLat, lon: a.lastLon }, a.destCoords) * 1.3;
   return { miles, at: roundTo5(Date.now() + (miles / typicalMph()) * 3600000) };
 }
+// Your saved note goes under the ETA in every message.
 function etaShareText(a) {
+  const note = (state.car.etaNote || "").trim();
+  return etaLine(a) + (note ? "\n\n" + note : "");
+}
+const ETA_NOTE_EXAMPLE = "Please call my normal phone number while I'm driving. I can't answer calls from apps on my hands-free.";
+function etaNoteField(id) {
+  const n = state.car.etaNote || "";
+  return `<div class="field"><label for="${id}">Add a note to every ETA message</label>
+    <textarea id="${id}" data-eta-note rows="2" maxlength="300" placeholder="e.g. ${esc(ETA_NOTE_EXAMPLE)}">${esc(n)}</textarea>
+    ${n ? "" : `<div><button type="button" class="chip" data-act="eta-note-example">Use: call my normal number</button></div>`}
+    <div class="hint">Saved for every drive. Leave it empty for no note.</div></div>`;
+}
+function etaLine(a) {
   const to = stripPostcodes(a.to || "");
   if (!to) return `On my way. Set off at ${fmtTime(a.startedAt)}.`;
   if (a.expect) return `On my way to ${to}. Should be there about ${fmtTime(a.startedAt + a.expect.ms + stats(a).brk)} (it usually takes ${fmtDur(a.expect.ms)}).`;
@@ -1460,6 +1477,7 @@ ${ask ? `<section class="panel ask">
         <div class="field" id="pcBox" hidden><label for="postcode">Postcode where you are</label><div class="inline"><input id="postcode" autocapitalize="characters" autocomplete="postal-code" placeholder="e.g. RG4 7AB"><button type="button" data-act="pc-name">Use it</button></div></div>
         <div class="field"><label for="odoStart">Mileage at start (optional)</label><div class="inline"><input id="odoStart" name="odoStart" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 48210">${photoBtn("start")}</div><div class="photo-status" id="photoStart"></div></div>
         <datalist id="placesList">${places()}</datalist>
+        ${etaNoteField("etaNoteStart")}
         <label class="check"><input type="checkbox" id="blackPref" ${prefBlack() ? "checked" : ""}><span>Black screen while driving<br><span class="hint">Hides everything, including the clock, about 10 seconds after you start. Recording carries on. Press and hold to bring it back.</span></span></label>
         <label class="check"><input type="checkbox" id="recordRoute" checked><span>Record my route for a map<br><span class="hint">Your route stays private in your log. You choose what to share later.</span></span></label>
         <button class="btn-primary btn-big" type="submit">Start drive with these details</button>
@@ -1491,7 +1509,9 @@ ${ask ? `<section class="panel ask">
   </section>
   ${renderOffer(a)}
   <span class="label">For a passenger, or once you're parked</span>
-  <div class="field"><span class="label">Send my ETA</span>${sendRow(etaShareText(a), "On my way", true)}</div>
+  <div class="field"><span class="label">Send my ETA</span>${sendRow(etaShareText(a), "On my way", true)}
+    <details class="eta-note"><summary>${state.car.etaNote ? `Includes your note: “${esc(state.car.etaNote.length > 60 ? state.car.etaNote.slice(0, 57) + "…" : state.car.etaNote)}”` : "Add a note to your ETA messages"}${CHEV}</summary>${etaNoteField("etaNoteDrive")}</details>
+  </div>
   <div class="actions">
     ${openPause() ? `<button class="act primary" data-act="pause">${ICON.play}Resume</button>`
       : `<button class="act" data-act="pause">${ICON.pause}Pause</button>
@@ -1857,6 +1877,7 @@ document.addEventListener("click", async (e) => {
     case "samples": el.disabled = true; await addSamples(); break;
     case "clear-samples": for (const t of state.trips.filter((x) => x.sample)) await store.deleteTrip(t.id); render(); toast("Sample drives removed"); break;
     case "export": exportCsv(); break;
+    case "eta-note-example": { const ta = el.closest(".field").querySelector("textarea"); ta.value = ETA_NOTE_EXAMPLE; await store.saveCar({ ...state.car, etaNote: ETA_NOTE_EXAMPLE }); el.remove(); toast("Note saved"); break; }
     case "share-text": navigator.share({ title: el.dataset.subject, text: el.dataset.text }).catch(() => {}); break;
     case "pick-car": state.driveCarId = el.dataset.id; document.querySelectorAll('[data-act="pick-car"]').forEach((c) => c.classList.toggle("on", c.dataset.id === el.dataset.id));
       { const h = $("#otherHint"); if (h) h.hidden = el.dataset.id !== OTHER_CAR; } break;
@@ -1914,6 +1935,7 @@ document.addEventListener("change", (e) => {
     return;
   }
   if (t.id === "carPlate") { t.value = formatPlate(t.value); return; }
+  if (t.dataset && "etaNote" in t.dataset) { store.saveCar({ ...state.car, etaNote: t.value.trim().slice(0, 300) }).then(() => toast("Note saved")); return; }
   if (t.id === "blackPref") { store.local.set("black", t.checked); return; }
   if (t.id === "shareTrim") { state.shareTrim = t.checked; render(); return; }
   if (t.id === "autoSlow" && state.active) { state.active.autoSlow = t.checked; store.saveActive(); }
