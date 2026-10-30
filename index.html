@@ -250,7 +250,7 @@ nav.tabs svg { width: 22px; height: 22px; stroke: var(--muted); fill: none; stro
 </nav>
 <div class="toast" id="toast" hidden></div>
 <div class="blackout" id="blackout" hidden role="button" tabindex="0" aria-label="Screen hidden while driving. Press and hold to show it.">
-  <div class="bo-in"><span class="bo-dot"></span><span>Recording your drive</span><span class="bo-hint" id="boHint">Press and hold to show the screen</span><span class="bo-bar" aria-hidden="true"><i></i></span></div>
+  <div class="bo-in"><span class="bo-dot"></span><span>Recording your drive</span><span class="bo-hint">Keep the phone unlocked</span><span class="bo-hint" id="boHint">Press and hold to show the screen</span><span class="bo-bar" aria-hidden="true"><i></i></span></div>
 </div>
 
 <script>
@@ -317,13 +317,20 @@ function stats(t, now = Date.now()) {
   const paused = sum(t.pauses, (p) => (p.end || end) - p.start);
   const slow = sum(t.slow, (s) => (s.end || end) - s.start);
   const moving = Math.max(0, total - brk - paused);
-  const miles = t.endedAt ? (t.distance || 0) : (t.gpsMiles || 0);
+  const miles = t.endedAt ? (t.distance || trackMiles(t)) : (t.gpsMiles || 0);
   const avg = miles && moving > 60000 ? miles / (moving / 3600000) : null;
   const other = t.carId === OTHER_CAR, c = other ? {} : carById(t.carId) || curCar();
   const mpg = other ? null : t.mpg ?? c.mpg, ppl = other ? null : t.ppl ?? c.ppl;
   const litres = miles && mpg ? (miles / mpg) * LITRES_PER_UK_GALLON : null;
   const cost = litres != null && ppl ? (litres * ppl) / 100 : null;
   return { total, brk, paused, slow, moving, miles, avg, litres, cost, end };
+}
+// Distance along the recorded route; the fallback when a drive was saved without one.
+const trackMilesCache = new WeakMap();
+function trackMiles(t) {
+  if (!t.track || t.track.length < 2) return 0;
+  if (!trackMilesCache.has(t)) { let m = 0; for (let i = 1; i < t.track.length; i++) m += haversineMiles({ lat: t.track[i - 1][0] / 1e5, lon: t.track[i - 1][1] / 1e5 }, { lat: t.track[i][0] / 1e5, lon: t.track[i][1] / 1e5 }); trackMilesCache.set(t, Math.round(m * 10) / 10); }
+  return trackMilesCache.get(t);
 }
 function haversineMiles(a, b) {
   const R = 3958.8, rad = Math.PI / 180;
@@ -918,9 +925,28 @@ function stopLive() {
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
 }
 async function keepAwake() {
-  try { if (navigator.wakeLock && document.visibilityState === "visible") wakeLock = await navigator.wakeLock.request("screen"); } catch {}
+  try {
+    if (navigator.wakeLock && document.visibilityState === "visible") { wakeLock = await navigator.wakeLock.request("screen"); state.wakeOk = true; }
+    else if (!navigator.wakeLock) state.wakeOk = false;
+  } catch { state.wakeOk = false; }
+  updateLive();
 }
-document.addEventListener("visibilitychange", () => { if (state.active && document.visibilityState === "visible") keepAwake(); });
+// Browsers stop sending locations while the page is hidden or the phone is locked; note the gap and say so.
+document.addEventListener("visibilitychange", () => {
+  const a = state.active; if (!a) return;
+  if (document.visibilityState === "hidden") { a.hiddenAt = Date.now(); store.saveActive(false); return; }
+  keepAwake();
+  if (a.hiddenAt) {
+    const gap = Date.now() - a.hiddenAt; delete a.hiddenAt;
+    if (gap > 15000) {
+      (a.gaps ||= []).push({ start: Date.now() - gap, end: Date.now() });
+      lastPos = null; lowSince = highSince = stillSince = movingSince = null;
+      const s = openSlow(); if (s && s.auto) s.end = Date.now() - gap;
+      toast(`Tracking stopped for ${fmtDur(gap)} while the screen was off or another app was open.`);
+    }
+    store.saveActive(); render();
+  }
+});
 
 function startGps() {
   if (!navigator.geolocation) { state.gps = "unavailable"; return; }
@@ -940,8 +966,13 @@ function onPos(p) {
   let mph = speed != null && speed >= 0 ? speed * 2.23694 : null;
   if (lastPos) {
     const d = haversineMiles(lastPos, here), dt = (here.t - lastPos.t) / 1000;
-    if (d > 0.004 && d < 3 && !openBreak()) a.gpsMiles = (a.gpsMiles || 0) + d;
-    if (mph == null && dt > 0) mph = d / (dt / 3600);
+    // A long gap (screen off, browser asleep) still counts its straight-line distance, unless it implies an impossible speed.
+    if (d > 0.004 && dt > 0 && d / (dt / 3600) < 130 && !openBreak()) a.gpsMiles = (a.gpsMiles || 0) + d;
+    if (dt > 30) {
+      lowSince = highSince = stillSince = movingSince = null;
+      const s = openSlow(); if (s && s.auto) { s.end = lastPos.t; store.saveActive(); }
+      if (speed == null) mph = null;
+    } else if (mph == null && dt > 0) mph = d / (dt / 3600);
   }
   lastPos = here; a.lastLat = lat; a.lastLon = lon;
   if (a.recordRoute) recordPoint(a, here);
@@ -983,24 +1014,27 @@ function project(pts, W, H, padX = 22, padY = 22) {
   return { xy, bar: { miles: nice, px: nice * pxPerMile } };
 }
 const inSlow = (t, time) => t.slow.some((s) => time >= s.start && time <= s.end);
-function routeSegments(t, pts, xy) {
+function routeSegments(t, pts, xy, hidden = () => false) {
   const segs = []; let cur = null;
   pts.forEach((p, i) => {
-    const slow = inSlow(t, p.t), gap = i > 0 && haversineMiles(pts[i - 1], p) > TRIM_MILES / 2;
-    if (!cur || cur.slow !== slow || gap) { cur = { slow, pts: cur && !gap ? [xy[i - 1]] : [] }; segs.push(cur); }
+    const slow = inSlow(t, p.t), hid = hidden(p), gap = i > 0 && haversineMiles(pts[i - 1], p) > 3;
+    if (!cur || cur.slow !== slow || cur.hid !== hid || gap) { cur = { slow, hid, pts: cur && !gap ? [xy[i - 1]] : [] }; segs.push(cur); }
     cur.pts.push(xy[i]);
   });
   return segs.filter((s) => s.pts.length > 1);
 }
 function routeSvg(t) {
-  const pts = sharedPoints(t);
-  if (pts.length < 2) return `<div class="muted">${state.shareTrim && unpack(t).length > 1 ? "This drive is too short to show once the mile around each end is hidden." : "Not enough of the route was recorded to draw it."}</div>`;
+  const pts = unpack(t);
+  if (pts.length < 2) return `<div class="muted">Not enough of the route was recorded to draw it.</div>`;
+  const first = pts[0], last = pts[pts.length - 1];
+  const hidden = (p) => state.shareTrim && (haversineMiles(p, first) <= TRIM_MILES || haversineMiles(p, last) <= TRIM_MILES);
   const W = 600, H = 380, { xy, bar } = project(pts, W, H);
   const line = (seg, color, w) => `<polyline points="${seg.pts.map((q) => q[0].toFixed(1) + "," + q[1].toFixed(1)).join(" ")}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
-  const segs = routeSegments(t, pts, xy);
+  const segs = routeSegments(t, pts, xy, hidden);
   const [sx, sy] = xy[0], [ex, ey] = xy[xy.length - 1];
-  return `<svg class="route-map" viewBox="0 0 ${W} ${H}" role="img" aria-label="Map of the route${state.shareTrim ? " with the first and last mile hidden" : ""}">
-    ${segs.map((g) => line(g, g.slow ? "var(--amber-fill)" : "var(--sign)", g.slow ? 6 : 4)).join("")}
+  const anyHidden = segs.some((g) => g.hid);
+  return `<svg class="route-map" viewBox="0 0 ${W} ${H}" role="img" aria-label="Map of your route">
+    ${segs.map((g) => g.hid ? line(g, "var(--muted)", 3).replace("<polyline", '<polyline stroke-dasharray="2 7" opacity=".7"') : line(g, g.slow ? "var(--amber-fill)" : "var(--sign)", g.slow ? 6 : 4)).join("")}
     <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="7" fill="var(--surface)" stroke="var(--good)" stroke-width="3"/>
     <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="7" fill="var(--sign)" stroke="var(--surface)" stroke-width="3"/>
     <g fill="var(--muted)" font-family="Overpass, system-ui, sans-serif" font-size="13">
@@ -1008,7 +1042,8 @@ function routeSvg(t) {
       <text x="22" y="${H - 28}">${bar.miles} mi</text>
     </g>
   </svg>
-  <div class="tl-legend"><span><i style="background:var(--good)"></i>${state.shareTrim ? "Shown from here" : "Start"}</span><span><i style="background:var(--sign)"></i>${state.shareTrim ? "Shown to here" : "Finish"}</span><span><i style="background:var(--amber-fill)"></i>Slow</span></div>`;
+  <div class="tl-legend"><span><i style="background:var(--good)"></i>Start</span><span><i style="background:var(--sign)"></i>Finish</span><span><i style="background:var(--amber-fill)"></i>Slow</span>${anyHidden ? `<span><i style="background:var(--muted)"></i>Left out when you share</span>` : ""}</div>
+  ${state.shareTrim && sharedPoints(t).length < 2 ? `<div class="hint">This drive is under two miles from end to end, so with the ends hidden there's no route left to share. Untick "Hide where it started and finished" to share it.</div>` : ""}`;
 }
 function renderRoute(t) {
   if (!t.track || t.track.length < 2) return "";
@@ -1146,6 +1181,8 @@ function renderOffer(a) {
 // Under 12 mph for a minute opens an automatic slow point; 20 mph+ for 20 s closes it.
 function autoSlow(mph, t) {
   const a = state.active, s = openSlow();
+  // Waiting before setting off isn't a hold-up: only watch for slow traffic once the car has properly moved.
+  if (!a.movedOnce) { if (mph >= 15) { a.movedOnce = true; store.saveActive(false); } else return; }
   if (mph < 12) { highSince = null; lowSince ??= t;
     if (!s && t - lowSince > 60000) { a.slow.push({ start: lowSince, end: null, reason: null, auto: true, lat: a.lastLat, lon: a.lastLon }); store.saveActive(); softRender(); }
   } else if (mph >= 20) { lowSince = null; highSince ??= t;
@@ -1203,7 +1240,7 @@ async function finishDrive(form) {
     distanceSource: parseFloat(form.distance.value) > 0 ? (Math.abs(distance - (a.gpsMiles || 0)) < 0.15 && a.gpsMiles ? "gps" : "manual") : (odoEnd > odoStart ? "odometer" : "none"),
     gpsMiles: Math.round((a.gpsMiles || 0) * 10) / 10,
     odoStart: odoStart || null, odoEnd: odoEnd || null,
-    slow: a.slow.filter((s) => s.end - s.start >= 5000), breaks: a.breaks.filter((b) => b.end - b.start >= 5000), pauses: a.pauses.filter((p) => p.end - p.start >= 5000),
+    slow: a.slow.filter((s) => s.end - s.start >= 5000), gaps: (a.gaps || []).filter((g) => g.start < now), breaks: a.breaks.filter((b) => b.end - b.start >= 5000), pauses: a.pauses.filter((p) => p.end - p.start >= 5000),
     notes: form.notes.value.trim(), ...(() => { if (a.carId === OTHER_CAR) return { carId: OTHER_CAR, car: OTHER_NAME, mpg: null, ppl: null }; const c = carById(a.carId) || curCar(); return { carId: c.id, car: c.name, mpg: c.mpg, ppl: c.ppl }; })(),
     startPhoto: a.startPhoto || null, endPhoto: state.endPhoto || null,
     kind: a.kind || null,
@@ -1227,6 +1264,7 @@ function updateLive() {
   set("liveMiles", a.gpsMiles ? a.gpsMiles.toFixed(1) + " mi" : "–");
   set("liveSpeed", state.gpsSpeed != null ? Math.round(state.gpsSpeed) + " mph" : "–");
   set("liveCost", st.cost != null ? fmtMoney(st.cost) : "–");
+  const ww = document.getElementById("wakeWarn"); if (ww) ww.hidden = !(state.wakeOk === false && state.gps !== "unavailable");
   const gl = document.getElementById("gpsText");
   if (gl) { gl.textContent = gpsText(); document.getElementById("gpsDot").classList.toggle("on", state.gps === "on"); }
   const tl = document.getElementById("liveTl"); if (tl) tl.innerHTML = timelineInner(a, st);
@@ -1336,6 +1374,8 @@ function renderDrive() {
   <section class="panel" style="gap:10px">
     ${timeline(a, st)}
     <div class="gps-line"><span class="dot ${state.gps === "on" ? "on" : ""}" id="gpsDot"></span><span id="gpsText">${gpsText()}</span></div>
+    <div class="hint warn" id="wakeWarn" ${state.wakeOk === false && state.gps !== "unavailable" ? "" : "hidden"}>This browser can't keep the screen on by itself. Set your phone's screen timeout to its longest before driving, because tracking stops when the screen turns off.</div>
+    ${state.gps !== "unavailable" ? `<div class="hint">Don't lock the phone. Browsers stop tracking while it's locked, so use Hide screen instead.</div>` : ""}
     ${state.gps === "on" && a.recordRoute ? `<div class="hint">Recording your route for the map.</div>` : ""}
     ${state.gps === "on" ? `<label style="display:flex;gap:8px;align-items:center;font-size:.85rem"><input type="checkbox" id="autoSlow" style="width:auto" ${a.autoSlow ? "checked" : ""}> Mark slow points automatically (under 12 mph for a minute)</label>` : ""}
   </section>
@@ -1415,6 +1455,8 @@ function renderDetail() {
     <div class="trip-meta">
       ${st.litres != null ? `<span class="num">${st.litres.toFixed(1)} L at ${t.ppl}p/L, ${t.mpg} mpg</span>` : `<span>Add a distance to estimate fuel</span>`}
       ${st.brk ? `<span>${fmtDur(st.brk)} on breaks</span>` : ""}
+      ${t.gaps && t.gaps.length ? `<span style="color:var(--amber)">Tracking stopped for ${fmtDur(sum(t.gaps, (g) => g.end - g.start))} while the screen was off</span>` : ""}
+      ${!t.distance && trackMiles(t) ? `<span>Distance measured from the route</span>` : ""}
       ${cmp != null ? `<span style="color:${cmp > 0 ? "var(--bad)" : "var(--good)"}">${fmtDur(Math.abs(cmp))} ${cmp > 0 ? "slower" : "quicker"} than your usual on this route</span>` : ""}
     </div>
     ${t.notes ? `<div style="white-space:pre-wrap">${esc(t.notes)}</div>` : ""}
