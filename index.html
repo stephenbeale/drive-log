@@ -160,6 +160,8 @@ button:disabled { opacity: .5; cursor: default; }
 .btn-link { display: inline-flex; justify-content: center; align-items: center; gap: 8px; text-decoration: none; font-weight: 600; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 10px 14px; }
 .btn-wa::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: #25d366; flex: none; }
 
+.clock.paused { opacity: .55; }
+
 /* Log */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 460px) { .stats { grid-template-columns: 1fr 1fr; } }
@@ -290,15 +292,16 @@ function stats(t, now = Date.now()) {
   const end = t.endedAt || now;
   const total = end - t.startedAt;
   const brk = sum(t.breaks, (b) => (b.end || end) - b.start);
+  const paused = sum(t.pauses, (p) => (p.end || end) - p.start);
   const slow = sum(t.slow, (s) => (s.end || end) - s.start);
-  const moving = Math.max(0, total - brk);
+  const moving = Math.max(0, total - brk - paused);
   const miles = t.endedAt ? (t.distance || 0) : (t.gpsMiles || 0);
   const avg = miles && moving > 60000 ? miles / (moving / 3600000) : null;
   const other = t.carId === OTHER_CAR, c = other ? {} : carById(t.carId) || curCar();
   const mpg = other ? null : t.mpg ?? c.mpg, ppl = other ? null : t.ppl ?? c.ppl;
   const litres = miles && mpg ? (miles / mpg) * LITRES_PER_UK_GALLON : null;
   const cost = litres != null && ppl ? (litres * ppl) / 100 : null;
-  return { total, brk, slow, moving, miles, avg, litres, cost, end };
+  return { total, brk, paused, slow, moving, miles, avg, litres, cost, end };
 }
 function haversineMiles(a, b) {
   const R = 3958.8, rad = Math.PI / 180;
@@ -814,6 +817,7 @@ const store = {
 let tick = null, watchId = null, lastPos = null, lowSince = null, highSince = null, wakeLock = null;
 const openSlow = () => state.active && state.active.slow.find((s) => !s.end);
 const openBreak = () => state.active && state.active.breaks.find((b) => !b.end);
+const openPause = () => state.active && (state.active.pauses || []).find((p) => !p.end);
 
 function startDrive(from, to, odoStart) {
   state.active = { id: uid(), from, to, startedAt: Date.now(), slow: [], breaks: [], gpsMiles: 0, odoStart: odoStart || null, autoSlow: true, carId: state.driveCarId || state.car.currentCarId, kind: state.kind || null, recordRoute: document.getElementById("recordRoute") ? document.getElementById("recordRoute").checked : true, track: [], startPhoto: state.pendingStartPhoto || null, fromCoords: state.fromCoords || null };
@@ -852,6 +856,8 @@ function onPos(p) {
   const a = state.active; if (!a) return;
   const { latitude: lat, longitude: lon, accuracy, speed } = p.coords;
   state.gps = "on";
+  // While paused nothing is tracked, and the next fix after resuming starts a fresh leg so no distance is invented.
+  if (openPause()) { lastPos = null; stillSince = movingSince = null; updateLive(); return; }
   if (accuracy > 75) return;
   const here = { lat, lon, t: p.timestamp };
   let mph = speed != null && speed >= 0 ? speed * 2.23694 : null;
@@ -1081,6 +1087,26 @@ function toggleBreak() {
   else { const s = openSlow(); if (s) s.end = now; a.breaks.push({ start: now, end: null }); }
   store.saveActive(); render();
 }
+function togglePause() {
+  const a = state.active, p = openPause(), now = Date.now();
+  a.pauses ??= [];
+  if (p) p.end = now;
+  else {
+    const s = openSlow(), b = openBreak(); if (s) s.end = now; if (b) b.end = now;
+    a.pauses.push({ start: now, end: null }); state.offer = state.dismissed = null;
+  }
+  store.saveActive(); render();
+}
+// Restart keeps where you're going, the car and the starting mileage, and clears the time and route so far.
+function restartDrive() {
+  const a = state.active, now = Date.now();
+  Object.assign(a, { startedAt: now, slow: [], breaks: [], pauses: [], track: [], gpsMiles: 0 });
+  delete a.arrivedAt;
+  lastPos = null; lowSince = highSince = stillSince = movingSince = null; state.offer = state.dismissed = null;
+  state.confirmRestart = false; state.ending = false;
+  const e = expectFor(routeKey(a), now); a.expect = e ? { ms: e.ms, text: expectText(e) } : null;
+  store.saveActive(); render(); toast("Drive restarted");
+}
 function setReason(r) {
   const a = state.active; const s = openSlow() || a.slow[a.slow.length - 1]; if (!s) return;
   s.reason = s.reason === r ? null : r; store.saveActive(); render();
@@ -1090,6 +1116,7 @@ async function finishDrive(form) {
   a.slow = a.slow.filter((s) => s.start < now); a.breaks = a.breaks.filter((b) => b.start < now);
   a.slow.forEach((s) => { if (!s.end || s.end > now) s.end = now; });
   a.breaks.forEach((b) => { if (!b.end || b.end > now) b.end = now; });
+  a.pauses = (a.pauses || []).filter((p) => p.start < now); a.pauses.forEach((p) => { if (!p.end || p.end > now) p.end = now; });
   const odoEnd = parseFloat(form.odoEnd.value), odoStart = parseFloat(form.odoStart.value);
   let distance = parseFloat(form.distance.value);
   if (!(distance > 0) && odoEnd > odoStart) distance = odoEnd - odoStart;
@@ -1099,7 +1126,7 @@ async function finishDrive(form) {
     distanceSource: parseFloat(form.distance.value) > 0 ? (Math.abs(distance - (a.gpsMiles || 0)) < 0.15 && a.gpsMiles ? "gps" : "manual") : (odoEnd > odoStart ? "odometer" : "none"),
     gpsMiles: Math.round((a.gpsMiles || 0) * 10) / 10,
     odoStart: odoStart || null, odoEnd: odoEnd || null,
-    slow: a.slow.filter((s) => s.end - s.start >= 5000), breaks: a.breaks.filter((b) => b.end - b.start >= 5000),
+    slow: a.slow.filter((s) => s.end - s.start >= 5000), breaks: a.breaks.filter((b) => b.end - b.start >= 5000), pauses: a.pauses.filter((p) => p.end - p.start >= 5000),
     notes: form.notes.value.trim(), ...(() => { if (a.carId === OTHER_CAR) return { carId: OTHER_CAR, car: OTHER_NAME, mpg: null, ppl: null }; const c = carById(a.carId) || curCar(); return { carId: c.id, car: c.name, mpg: c.mpg, ppl: c.ppl }; })(),
     startPhoto: a.startPhoto || null, endPhoto: state.endPhoto || null,
     kind: a.kind || null,
@@ -1117,7 +1144,7 @@ function discardDrive() { stopLive(); state.active = null; state.ending = false;
 function updateLive() {
   const a = state.active; if (!a || state.tab !== "drive") return;
   const st = stats(a), set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  set("liveClock", fmtClock(st.total));
+  set("liveClock", fmtClock(st.total - st.paused));
   set("liveMoving", fmtDur(st.moving));
   set("liveSlow", fmtDur(st.slow));
   set("liveMiles", a.gpsMiles ? a.gpsMiles.toFixed(1) + " mi" : "–");
@@ -1136,11 +1163,11 @@ function gpsText() {
 function timelineInner(t, st) {
   const span = Math.max(1, st.end - t.startedAt);
   const seg = (x, cls) => { const l = ((x.start - t.startedAt) / span) * 100, w = (((x.end || st.end) - x.start) / span) * 100; return `<span class="${cls}" style="left:${l.toFixed(2)}%;width:${Math.max(w, 0.6).toFixed(2)}%"></span>`; };
-  return (t.slow || []).map((s) => seg(s, "s")).join("") + (t.breaks || []).map((b) => seg(b, "b")).join("");
+  return (t.slow || []).map((s) => seg(s, "s")).join("") + [...(t.breaks || []), ...(t.pauses || [])].map((b) => seg(b, "b")).join("");
 }
 function timeline(t, st) {
   return `<div class="tl" ${t.endedAt ? "" : 'id="liveTl"'} role="img" aria-label="Journey timeline: ${esc(fmtDur(st.slow))} slow, ${esc(fmtDur(st.brk))} stopped">${timelineInner(t, st)}</div>
-  <div class="tl-legend"><span><i style="background:color-mix(in srgb, var(--sign) 22%, var(--bg))"></i>Moving</span><span><i style="background:var(--amber-fill)"></i>Slow</span><span><i style="background:var(--brk)"></i>Stopped / break</span><span class="num">${fmtTime(t.startedAt)} – ${t.endedAt ? fmtTime(t.endedAt) : "now"}</span></div>`;
+  <div class="tl-legend"><span><i style="background:color-mix(in srgb, var(--sign) 22%, var(--bg))"></i>Moving</span><span><i style="background:var(--amber-fill)"></i>Slow</span><span><i style="background:var(--brk)"></i>Break or paused</span><span class="num">${fmtTime(t.startedAt)} – ${t.endedAt ? fmtTime(t.endedAt) : "now"}</span></div>`;
 }
 function places() {
   const set = new Set(); state.trips.forEach((t) => { t.from && set.add(t.from.trim()); t.to && set.add(t.to.trim()); });
@@ -1191,12 +1218,12 @@ function renderDrive() {
   }
   const st = stats(a), s = openSlow(), b = openBreak();
   const lastSlow = s || a.slow[a.slow.length - 1];
-  const status = s ? `<span class="state-chip slow">Slow for <span id="slowFor" class="num">${fmtDur(Date.now() - s.start)}</span></span>` : b ? `<span class="state-chip brk">On a break</span>` : `<span class="state-chip">Driving</span>`;
+  const status = openPause() ? `<span class="state-chip brk">Paused</span>` : s ? `<span class="state-chip slow">Slow for <span id="slowFor" class="num">${fmtDur(Date.now() - s.start)}</span></span>` : b ? `<span class="state-chip brk">On a break</span>` : `<span class="state-chip">Driving</span>`;
   return `<section class="sign" aria-label="Current drive">
     <div class="sign-in">
       <div class="sign-route"><span>${esc(a.from || "Start")}</span><span class="arrow">→</span><span>${esc(a.to || "Somewhere")}</span></div>
       ${status}
-      <div class="clock" id="liveClock">${fmtClock(st.total)}</div>
+      <div class="clock ${openPause() ? "paused" : ""}" id="liveClock">${fmtClock(st.total - st.paused)}</div>
       ${a.carId === OTHER_CAR ? `<div class="sign-eta">${OTHER_NAME}</div>` : state.car.cars.length > 1 && carById(a.carId) ? `<div class="sign-eta">${esc(carById(a.carId).name)}</div>` : ""}
       ${a.expect ? `<div class="sign-eta">${esc(a.expect.text)} · arrive about <b class="num">${fmtTime(a.startedAt + a.expect.ms + st.brk)}</b></div>` : ""}
       <div class="sign-stats">
@@ -1211,10 +1238,12 @@ function renderDrive() {
   ${renderOffer(a)}
   <span class="label">For a passenger, or once you're parked</span>
   <a class="btn-link btn-wa" href="${esc(waLink(etaShareText(a)))}" target="_blank" rel="noopener">Send my ETA on WhatsApp</a>
-  <div class="controls">
+  ${openPause() ? `<button class="btn-primary btn-big" data-act="pause">Resume drive</button>` : `<div class="controls">
     <button class="btn-slow ${s ? "on" : ""}" data-act="slow">${s ? "Moving again" : "Slow"}</button>
     <button class="btn-break ${b ? "on" : ""}" data-act="break">${b ? "Back on the road" : "Break"}</button>
-  </div>
+  </div>`}
+  ${state.confirmRestart ? `<div class="confirm"><div>Restart this drive from now? The time, slow points and route so far are cleared. Where you're going and the car stay the same.</div><div class="btn-row"><button class="btn-danger" data-act="restart-yes">Restart drive</button><button data-act="restart-no">Keep going</button></div></div>`
+    : `<div class="btn-row">${openPause() ? "" : `<button data-act="pause">Pause</button>`}<button data-act="restart">Restart</button></div>`}
   ${lastSlow ? `<section class="panel" style="gap:10px">
     <span class="label">${s ? "Why is it slow?" : `Last slow point · ${fmtTime(lastSlow.start)}`}</span>
     <div class="chips">${REASONS.map((r) => `<button class="chip ${lastSlow.reason === r ? "on" : ""}" data-act="reason" data-r="${r}">${r}</button>`).join("")}</div>
@@ -1500,6 +1529,10 @@ document.addEventListener("click", async (e) => {
       msg.textContent = name && name !== tidyPostcode(pc) ? "Named from the postcode. Edit it if you like." : "Postcode added. Type a name for it if you like."; break; }
     case "slow": toggleSlow(); break;
     case "break": toggleBreak(); break;
+    case "pause": togglePause(); break;
+    case "restart": state.confirmRestart = true; render(); break;
+    case "restart-no": state.confirmRestart = false; render(); break;
+    case "restart-yes": restartDrive(); break;
     case "reason": setReason(el.dataset.r); break;
     case "end": state.ending = true; render(); $("#distance")?.focus(); break;
     case "end-cancel": state.ending = false; if (state.active) { delete state.active.arrivedAt; store.saveActive(false); } render(); break;
