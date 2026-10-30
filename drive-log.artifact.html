@@ -70,11 +70,17 @@ button:disabled { opacity: .5; cursor: default; }
 .state-chip.slow { background: var(--amber-fill); color: #1b1300; }
 .state-chip.brk { background: rgba(255,255,255,.3); }
 
-.controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.btn-slow { background: var(--amber-soft); border: 2px solid var(--amber-fill); color: var(--ink); padding: 18px 10px; font-size: 1.05rem; }
-.btn-slow.on { background: var(--amber-fill); color: #1b1300; }
-.btn-break { padding: 18px 10px; font-size: 1.05rem; }
-.btn-break.on { background: var(--brk); color: #fff; border-color: var(--brk); }
+.ico { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.ico.solid { fill: currentColor; stroke: none; }
+.ico-pair { display: inline-flex; gap: 2px; }
+.actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
+.act { display: grid; justify-items: center; gap: 6px; padding: 14px 6px 12px; font-size: .95rem; }
+.act.primary { background: var(--sign); color: var(--sign-ink); border-color: var(--sign); }
+.act.on { background: var(--brk); color: #fff; border-color: var(--brk); }
+.btn-ico { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.slow-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.btn-slow { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.btn-slow.on { border-color: var(--amber-fill); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { padding: 6px 11px; border-radius: 99px; font-size: .85rem; font-weight: 600; background: var(--bg); }
 .chip.on { background: var(--amber-fill); border-color: var(--amber-fill); color: #1b1300; }
@@ -195,7 +201,7 @@ nav.tabs svg { width: 22px; height: 22px; stroke: var(--muted); fill: none; stro
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber-fill); position: absolute; margin-left: 16px; margin-top: -2px; }
 
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 9px 15px; border-radius: 8px; font-size: .88rem; z-index: 9; max-width: calc(100% - 32px); }
-@media (prefers-reduced-motion: no-preference) { .btn-slow.on { animation: pulse 1.6s ease-in-out infinite; } @keyframes pulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--amber-fill) 30%, transparent); } } }
+
 </style>
 
 <div class="wrap" id="app">
@@ -799,6 +805,18 @@ const store = {
   },
 };
 
+/* ---------- icons ---------- */
+const ICON = {
+  pause: '<svg class="ico solid" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
+  play: '<svg class="ico solid" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l10.6-6.8a.8.8 0 0 0 0-1.4L9.2 4.5a.8.8 0 0 0-1.2.7Z"/></svg>',
+  coffee: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9.5h11v4.5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5V9.5Z"/><path d="M15.5 11h1.8a2.3 2.3 0 0 1 0 4.6h-2"/><path d="M8 3.5c-.8.9.8 1.6 0 2.6M11.5 3.5c-.8.9.8 1.6 0 2.6"/><path d="M3.5 21h14"/></svg>',
+  walk: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="13.5" cy="4.2" r="1.8"/><path d="m10 21 2.2-6.2 2.8 2.7V21"/><path d="m12.2 14.8-.9-5.3"/><path d="M11.3 9.5 8.2 11.7 7.5 15"/><path d="m11.3 9.5 3.4 1.6 2 2.8"/></svg>',
+  wheel: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 14.5V21M9.6 11.2 3.4 9.5M14.4 11.2l6.2-1.7"/></svg>',
+  restart: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.3-5.4"/><path d="M4.5 3.8v4.6h4.6"/></svg>',
+  tortoise: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 15.5a7 6.2 0 0 1 14 0Z"/><path d="m8.2 10.6 3.3 4.9 3.3-4.9"/><path d="M18.5 15.5h1.3a2 2 0 0 0 2-2v-1h-2.5"/><path d="M7 15.5v2.5M16 15.5v2.5M4.5 15.5 2.5 17"/></svg>',
+  flag: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 21V3.5"/><path d="M5.5 4h12l-2.5 4.5 2.5 4.5h-12"/></svg>',
+};
+
 /* ---------- live drive ---------- */
 let tick = null, watchId = null, lastPos = null, lowSince = null, highSince = null, wakeLock = null;
 const openSlow = () => state.active && state.active.slow.find((s) => !s.end);
@@ -1224,23 +1242,26 @@ function renderDrive() {
   ${renderOffer(a)}
   <span class="label">For a passenger, or once you're parked</span>
   <a class="btn-link btn-wa" href="${esc(waLink(etaShareText(a)))}" target="_blank" rel="noopener">Send my ETA on WhatsApp</a>
-  ${openPause() ? `<button class="btn-primary btn-big" data-act="pause">Resume drive</button>` : `<div class="controls">
-    <button class="btn-slow ${s ? "on" : ""}" data-act="slow">${s ? "Moving again" : "Slow"}</button>
-    <button class="btn-break ${b ? "on" : ""}" data-act="break">${b ? "Back on the road" : "Break"}</button>
-  </div>`}
-  ${state.confirmRestart ? `<div class="confirm"><div>Restart this drive from now? The time, slow points and route so far are cleared. Where you're going and the car stay the same.</div><div class="btn-row"><button class="btn-danger" data-act="restart-yes">Restart drive</button><button data-act="restart-no">Keep going</button></div></div>`
-    : `<div class="btn-row">${openPause() ? "" : `<button data-act="pause">Pause</button>`}<button data-act="restart">Restart</button></div>`}
-  ${lastSlow ? `<section class="panel" style="gap:10px">
-    <span class="label">${s ? "Why is it slow?" : `Last slow point · ${fmtTime(lastSlow.start)}`}</span>
-    <div class="chips">${REASONS.map((r) => `<button class="chip ${lastSlow.reason === r ? "on" : ""}" data-act="reason" data-r="${r}">${r}</button>`).join("")}</div>
-  </section>` : ""}
+  <div class="actions">
+    ${openPause() ? `<button class="act primary" data-act="pause">${ICON.play}Resume</button>`
+      : `<button class="act" data-act="pause">${ICON.pause}Pause</button>
+    <button class="act ${b ? "on" : ""}" data-act="break">${b ? `${ICON.wheel}Back on the road` : `<span class="ico-pair">${ICON.coffee}${ICON.walk}</span>Break`}</button>`}
+    <button class="act" data-act="restart">${ICON.restart}Restart</button>
+  </div>
+  ${state.confirmRestart ? `<div class="confirm"><div>Restart this drive from now? The time, slow points and route so far are cleared. Where you're going and the car stay the same.</div><div class="btn-row"><button class="btn-danger" data-act="restart-yes">Restart drive</button><button data-act="restart-no">Keep going</button></div></div>` : ""}
+  ${openPause() ? "" : `<section class="panel" style="gap:10px">
+    <div class="slow-row"><button class="btn-slow ${s ? "on" : ""}" data-act="slow">${ICON.tortoise}${s ? "Traffic's moving again" : "Log slow traffic"}</button>
+    <span class="hint">${s ? "Pick what's holding you up." : state.gps === "on" ? "Usually spotted for you." : "For a passenger to log hold-ups."}</span></div>
+    ${lastSlow ? `<span class="label">${s ? "Why is it slow?" : `Last slow point · ${fmtTime(lastSlow.start)}`}</span>
+    <div class="chips">${REASONS.map((r) => `<button class="chip ${lastSlow.reason === r ? "on" : ""}" data-act="reason" data-r="${r}">${r}</button>`).join("")}</div>` : ""}
+  </section>`}
   <section class="panel" style="gap:10px">
     ${timeline(a, st)}
     <div class="gps-line"><span class="dot ${state.gps === "on" ? "on" : ""}" id="gpsDot"></span><span id="gpsText">${gpsText()}</span></div>
     ${state.gps === "on" && a.recordRoute ? `<div class="hint">Recording your route for the map.</div>` : ""}
     ${state.gps === "on" ? `<label style="display:flex;gap:8px;align-items:center;font-size:.85rem"><input type="checkbox" id="autoSlow" style="width:auto" ${a.autoSlow ? "checked" : ""}> Mark slow points automatically (under 12 mph for a minute)</label>` : ""}
   </section>
-  ${state.ending ? renderEndForm(a, st) : `<button class="btn-primary btn-big" data-act="end">Finish drive</button>`}`;
+  ${state.ending ? renderEndForm(a, st) : `<button class="btn-primary btn-big btn-ico" data-act="end">${ICON.flag}Finish drive</button>`}`;
 }
 function renderEndForm(a, st) {
   return `<form id="endForm" class="panel">
