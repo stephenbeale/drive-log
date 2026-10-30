@@ -190,10 +190,21 @@ button:disabled { opacity: .5; cursor: default; }
 .go { display: grid; gap: 10px; justify-items: center; text-align: center; padding-block: 8px; }
 .btn-go { width: 100%; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 30px 16px; border-radius: 14px; font-size: 1.4rem; font-weight: 800; font-family: var(--f-display); background: var(--sign); color: var(--sign-ink); border: 0; }
 .btn-go .ico { width: 30px; height: 30px; }
-details.more > summary { cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; }
-details.more > summary::-webkit-details-marker { display: none; }
-details.more > summary::after { content: "+"; font-size: 1.3rem; color: var(--muted); }
-details.more[open] > summary::after { content: "–"; }
+details.more > summary, details.fold > summary { cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+details.more > summary::-webkit-details-marker, details.fold > summary::-webkit-details-marker { display: none; }
+details.fold { gap: 0; }
+details.fold[open] > summary { margin-bottom: 14px; }
+.fold-body { display: grid; gap: 14px; min-width: 0; }
+.chev-btn { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg); display: grid; place-items: center; }
+.chev { width: 9px; height: 9px; border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); transform: translateY(-2px) rotate(45deg); transition: transform .2s; }
+details[open] > summary .chev { transform: translateY(2px) rotate(-135deg); }
+summary:focus-visible .chev-btn { outline: 2px solid var(--sign); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
+/* Rows that open something get a right-pointing chevron. */
+.trip, .journey { position: relative; }
+.trip { padding-right: 26px !important; }
+.journey { padding-right: 28px; }
+.trip::after, .journey::after { content: ""; position: absolute; right: 8px; top: 50%; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-top: 2px solid var(--muted); transform: translateY(-50%) rotate(45deg); }
 .tidy { border: 2px solid var(--sign-text); }
 
 /* UK number plate badge: yellow rear plate, blue side band, green band for zero-emission vehicles. Real-world colours in both themes. */
@@ -1103,8 +1114,11 @@ const inSlow = (t, time) => t.slow.some((s) => time >= s.start && time <= s.end)
 function routeSegments(t, pts, xy, hidden = () => false) {
   const segs = []; let cur = null;
   pts.forEach((p, i) => {
-    const slow = inSlow(t, p.t), hid = hidden(p), gap = i > 0 && haversineMiles(pts[i - 1], p) > 3;
-    if (!cur || cur.slow !== slow || cur.hid !== hid || gap) { cur = { slow, hid, pts: cur && !gap ? [xy[i - 1]] : [] }; segs.push(cur); }
+    const slow = inSlow(t, p.t), hid = hidden(p);
+    // A jump between fixes (screen off, no signal) becomes its own "gap" segment so the line stays joined.
+    const gap = i > 0 && (haversineMiles(pts[i - 1], p) > 0.5 || p.t - pts[i - 1].t > 60000);
+    if (gap) { segs.push({ gap: true, pts: [xy[i - 1], xy[i]] }); cur = null; }
+    if (!cur || cur.slow !== slow || cur.hid !== hid) { cur = { slow, hid, pts: cur ? [xy[i - 1]] : [] }; segs.push(cur); }
     cur.pts.push(xy[i]);
   });
   return segs.filter((s) => s.pts.length > 1);
@@ -1120,7 +1134,7 @@ function routeSvg(t) {
   const [sx, sy] = xy[0], [ex, ey] = xy[xy.length - 1];
   const anyHidden = segs.some((g) => g.hid);
   return `<svg class="route-map" viewBox="0 0 ${W} ${H}" role="img" aria-label="Map of your route">
-    ${segs.map((g) => g.hid ? line(g, "var(--muted)", 3).replace("<polyline", '<polyline stroke-dasharray="2 7" opacity=".7"') : line(g, g.slow ? "var(--amber-fill)" : "var(--sign)", g.slow ? 6 : 4)).join("")}
+    ${segs.map((g) => g.gap ? line(g, "var(--muted)", 2.5).replace("<polyline", '<polyline stroke-dasharray="6 6"') : g.hid ? line(g, "var(--muted)", 3).replace("<polyline", '<polyline stroke-dasharray="2 7" opacity=".7"') : line(g, g.slow ? "var(--amber-fill)" : "var(--sign)", g.slow ? 6 : 4)).join("")}
     <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="7" fill="var(--surface)" stroke="var(--good)" stroke-width="3"/>
     <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="7" fill="var(--sign)" stroke="var(--surface)" stroke-width="3"/>
     <g fill="var(--muted)" font-family="Overpass, system-ui, sans-serif" font-size="13">
@@ -1128,16 +1142,20 @@ function routeSvg(t) {
       <text x="22" y="${H - 28}">${bar.miles} mi</text>
     </g>
   </svg>
-  <div class="tl-legend"><span><i style="background:var(--good)"></i>Start</span><span><i style="background:var(--sign)"></i>Finish</span><span><i style="background:var(--amber-fill)"></i>Slow</span>${anyHidden ? `<span><i style="background:var(--muted)"></i>Left out when you share</span>` : ""}</div>
-  ${state.shareTrim && sharedPoints(t).length < 2 ? `<div class="hint">This drive is under two miles from end to end, so with the ends hidden there's no route left to share. Untick "Hide where it started and finished" to share it.</div>` : ""}`;
+  <div class="tl-legend"><span><i style="background:var(--good)"></i>Start</span><span><i style="background:var(--sign)"></i>Finish</span><span><i style="background:var(--amber-fill)"></i>Slow</span>${segs.some((g) => g.gap) ? `<span><i style="background:var(--muted)"></i>No location (dashed)</span>` : ""}${anyHidden ? `<span><i style="background:var(--muted)"></i>Left out when you share</span>` : ""}</div>
+  ${state.shareTrim && sharedPoints(t).length < 2 ? `<div class="hint">Too little of this route is more than a mile from where it started or finished, so with the ends hidden there's nothing left to share. Untick "Hide where it started and finished" to share it.</div>` : ""}`;
 }
 function renderRoute(t) {
   if (!t.track || t.track.length < 2) return "";
-  return `<section class="panel">
-    <h2>Route</h2>
-    ${routeSvg(t)}
-  </section>`;
+  return fold("route", "Route", routeSvg(t), true);
 }
+/* ---------- collapsible sections: a round chevron button in the header, open state remembered per section ---------- */
+const CHEV = '<span class="chev-btn" aria-hidden="true"><span class="chev"></span></span>';
+const foldOpen = (key, dflt) => { const v = store.local.get("fold." + key, null); return v == null ? dflt : v; };
+function fold(key, title, body, dflt = true) {
+  return `<details class="panel fold" data-fold="${key}" ${foldOpen(key, dflt) ? "open" : ""}><summary><h2>${title}</h2>${CHEV}</summary><div class="fold-body">${body}</div></details>`;
+}
+
 /* ---------- sharing (WhatsApp and the phone's share sheet) ---------- */
 const waLink = (text) => "https://wa.me/?text=" + encodeURIComponent(text);
 const smsLink = (text) => "sms:?&body=" + encodeURIComponent(text);
@@ -1170,14 +1188,13 @@ function etaShareText(a) {
 }
 function renderShare(t) {
   const hasRoute = t.track && t.track.length > 1;
-  return `<section class="panel">
-    <h2>Share this drive</h2>
+  return fold("share", "Share this drive", `
     <label class="check"><input type="checkbox" id="shareTrim" ${state.shareTrim ? "checked" : ""}><span>Hide where it started and finished<br><span class="hint">Recommended. Leaves out postcodes, the date and times, and the mile of route around each end, so nobody can tell where you live or work. Your full drive stays private in your log.</span></span></label>
     ${sendRow(tripShareText(t), "My drive: " + sharedName(t))}
     ${hasRoute && canShareFiles() ? `<div class="btn-row"><button data-act="share-native">Share map image…</button></div>` : ""}
     ${hasRoute ? `<div class="btn-row"><button data-act="share-png">Save map image</button><button data-act="share-json">Save route file</button><button data-act="share-link">Copy Google Maps link</button></div>` : ""}
     <div class="hint" id="shareMsg">${hasRoute ? "Messages include a summary and a Google Maps link to the route. Share map image sends the picture of your route instead. The route file (GeoJSON) opens in mapping apps." : "Messages include a summary of the drive: time, distance, hold-ups and cost."}</div>
-  </section>`;
+`, false);
 }
 function mapsLink(t) {
   const pts = sharedPoints(t); if (pts.length < 2) return null;
@@ -1206,7 +1223,7 @@ async function routePng(t) {
   g.fillText([fmtDur(st.moving), st.miles ? fmtMi(st.miles) : null, st.slow > 30000 ? fmtDur(st.slow) + " slow" : null].filter(Boolean).join("  ·  "), 60, 132);
   const { xy, bar } = project(pts, W - 120, H - top - 140, 30, 30);
   g.save(); g.translate(60, top); g.lineCap = g.lineJoin = "round";
-  for (const seg of routeSegments(t, pts, xy)) { g.strokeStyle = seg.slow ? v("--amber-fill") : v("--sign"); g.lineWidth = seg.slow ? 14 : 9; g.beginPath(); seg.pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); }
+  for (const seg of routeSegments(t, pts, xy)) { g.setLineDash(seg.gap ? [18, 18] : []); g.strokeStyle = seg.gap ? v("--muted") : seg.slow ? v("--amber-fill") : v("--sign"); g.lineWidth = seg.gap ? 5 : seg.slow ? 14 : 9; g.beginPath(); seg.pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); }
   const dot = ([x, y], fill, stroke) => { g.beginPath(); g.arc(x, y, 15, 0, 7); g.fillStyle = fill; g.fill(); g.lineWidth = 6; g.strokeStyle = stroke; g.stroke(); };
   dot(xy[0], v("--surface"), v("--good")); dot(xy[xy.length - 1], v("--sign"), v("--surface"));
   g.restore();
@@ -1415,7 +1432,7 @@ ${ask ? `<section class="panel ask">
       <div class="btn-row"><button class="btn-primary" data-act="ask-save" data-id="${esc(ask.id)}">Save</button><button data-act="ask-later" data-id="${esc(ask.id)}">Not now</button></div>
     </section>` : ""}
     <details class="panel more" id="moreOpts" ${state.moreOpen ? "open" : ""}>
-      <summary>More options</summary>
+      <summary><span>More options</span>${CHEV}</summary>
       <div class="hint">Set a destination to get an arrival time and an offer to end the journey when you get there. Everything else can wait until afterwards.</div>
       <form id="startForm" class="panel" style="padding:0;border:0;gap:12px">
         <div class="ft">
@@ -1576,10 +1593,8 @@ function renderDetail() {
   </section>
   ${renderRoute(t)}
   ${renderShare(t)}
-  <section class="panel">
-    <h2>Slow points <span class="muted num" style="font-weight:400">${t.slow.length ? "· " + fmtDur(st.slow) + " total" : ""}</span></h2>
-    ${t.slow.length ? `<div class="slow-list">${t.slow.map((s) => `<div class="slow-item"><span class="num muted">${fmtTime(s.start)}</span><span><b>${esc(s.reason || (s.auto ? "Slow traffic" : "Slow"))}</b>${s.auto ? ' <span class="tag">Auto</span>' : ""}${s.lat != null ? ` · <a href="https://www.google.com/maps?q=${s.lat},${s.lon}" target="_blank" rel="noopener">Map</a>` : ""}</span><span class="num" style="color:var(--amber);font-weight:600">${fmtDur(s.end - s.start)}</span></div>`).join("")}</div>` : `<div class="muted">No slow points logged. If you remember any, add them with Edit.</div>`}
-  </section>
+  ${fold("slow", `Slow points <span class="muted num" style="font-weight:400">${t.slow.length ? "· " + fmtDur(st.slow) + " total" : ""}</span>`, `
+    ${t.slow.length ? `<div class="slow-list">${t.slow.map((s) => `<div class="slow-item"><span class="num muted">${fmtTime(s.start)}</span><span><b>${esc(s.reason || (s.auto ? "Slow traffic" : "Slow"))}</b>${s.auto ? ' <span class="tag">Auto</span>' : ""}${s.lat != null ? ` · <a href="https://www.google.com/maps?q=${s.lat},${s.lon}" target="_blank" rel="noopener">Map</a>` : ""}</span><span class="num" style="color:var(--amber);font-weight:600">${fmtDur(s.end - s.start)}</span></div>`).join("")}</div>` : `<div class="muted">No slow points logged. If you remember any, add them with Edit.</div>`}`, true)}
   ${state.confirmDel ? `<div class="confirm"><div>Delete this drive from your log? This can't be undone.</div><div class="btn-row"><button class="btn-danger" data-act="del-yes">Delete drive</button><button data-act="del-no">Keep it</button></div></div>`
     : `<div class="btn-row"><button data-act="edit">Edit or add slow points</button><button data-act="again">Drive this route again</button><button class="btn-danger" data-act="del">Delete</button></div>`}`;
 }
@@ -1864,7 +1879,10 @@ document.addEventListener("click", async (e) => {
       navigator.clipboard.writeText(link).then(() => toast("Link copied"), () => { const i = msg.querySelector("input"); i.focus(); i.select(); }); break; }
   }
 });
-document.addEventListener("toggle", (e) => { if (e.target.id === "moreOpts") state.moreOpen = e.target.open; }, true);
+document.addEventListener("toggle", (e) => {
+  if (e.target.id === "moreOpts") state.moreOpen = e.target.open;
+  if (e.target.dataset && e.target.dataset.fold) store.local.set("fold." + e.target.dataset.fold, e.target.open);
+}, true);
 document.addEventListener("input", (e) => {
   if (state.tidyDraft && ["tFrom", "tTo", "tKind"].includes(e.target.id)) state.tidyDraft[{ tFrom: "from", tTo: "to", tKind: "kind" }[e.target.id]] = e.target.value;
   if (e.target.id === "from" || e.target.id === "to") updateExpect();
