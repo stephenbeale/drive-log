@@ -8,6 +8,7 @@ Time your drives, see where you got held up, and know what each journey costs in
 
 - **One-press regular journeys.** Commute, school run, heading home and so on, each with the time it usually takes at this time of day.
 - **Hands-free while you drive.** With location on, it tracks distance and speed and spots slow traffic by itself. Stop for a while and it offers a break. Stop near your destination and it offers to end the journey. A break ends by itself when you drive off.
+- **Share on WhatsApp.** Send your ETA before you set off, or a summary of a finished drive with a link to the route.
 - **Route map.** Records the path you drove. Sharing it (an image, a GeoJSON file or a Google Maps link) can hide the mile around the start and finish, plus postcodes and times, so the route doesn't reveal where you live or work.
 - **Insights per route.** Typical, quickest and slowest times, broken down by the time you set off, the day of the week, and term time versus school and bank holidays.
 - **Several cars.** Pick the car when you start a drive. Each one has its own MPG and fuel price.

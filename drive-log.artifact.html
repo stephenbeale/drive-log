@@ -141,6 +141,9 @@ button:disabled { opacity: .5; cursor: default; }
 .car-row.on { border-color: var(--sign); box-shadow: inset 0 0 0 1px var(--sign); }
 .car-row .tag { margin-left: auto; }
 
+.btn-link { display: inline-flex; justify-content: center; align-items: center; gap: 8px; text-decoration: none; font-weight: 600; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 10px 14px; }
+.btn-wa::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: #25d366; flex: none; }
+
 /* Log */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 460px) { .stats { grid-template-columns: 1fr 1fr; } }
@@ -886,11 +889,39 @@ function renderRoute(t) {
   return `<section class="panel">
     <h2>Route</h2>
     ${routeSvg(t)}
-    <div class="share">
-      <label class="check"><input type="checkbox" id="shareTrim" ${state.shareTrim ? "checked" : ""}><span>Hide the mile around the start and finish<br><span class="hint">Recommended before sharing, so nobody can tell where you live or work. Postcodes and times are left out of what you share too. Your full route stays private in your log.</span></span></label>
-      <div class="btn-row"><button data-act="share-png">Save map image</button><button data-act="share-json">Save route file</button><button data-act="share-link">Copy Google Maps link</button></div>
-      <div class="hint" id="shareMsg">The image and Google Maps link are good for WhatsApp. The route file (GeoJSON) opens in mapping apps.</div>
+  </section>`;
+}
+/* ---------- sharing (WhatsApp and the phone's share sheet) ---------- */
+const waLink = (text) => "https://wa.me/?text=" + encodeURIComponent(text);
+const canShareFiles = () => { try { return !IN_CLAUDE && !!navigator.canShare && navigator.canShare({ files: [new File([""], "x.png", { type: "image/png" })] }); } catch { return false; } };
+function tripShareText(t) {
+  const st = stats(t), lines = [sharedName(t)];
+  const reasons = {}; t.slow.forEach((x) => { const k = x.reason || "slow traffic"; reasons[k] = (reasons[k] || 0) + (x.end - x.start); });
+  lines.push([state.shareTrim ? null : fmtDate(t.startedAt), `${fmtDur(st.moving)} driving`, st.miles ? fmtMi(st.miles) : null, st.avg ? `${Math.round(st.avg)} mph average` : null].filter(Boolean).join(" · "));
+  if (st.slow > 30000) lines.push(`Held up for ${fmtDur(st.slow)} (${Object.entries(reasons).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k.toLowerCase()} ${fmtDur(v)}`).join(", ")})`);
+  else lines.push("A clear run");
+  if (st.cost != null) lines.push(`Fuel about ${fmtMoney(st.cost)}`);
+  const link = t.track && t.track.length > 1 ? mapsLink(t) : null;
+  if (link) lines.push("Route: " + link);
+  return lines.join("\n");
+}
+function etaShareText(a) {
+  const to = stripPostcodes(a.to || "") || "my destination";
+  if (!a.expect) return `On my way to ${to}. Set off at ${fmtTime(a.startedAt)}.`;
+  const st = stats(a);
+  return `On my way to ${to}. Should be there about ${fmtTime(a.startedAt + a.expect.ms + st.brk)} (it usually takes ${fmtDur(a.expect.ms)}).`;
+}
+function renderShare(t) {
+  const hasRoute = t.track && t.track.length > 1;
+  return `<section class="panel">
+    <h2>Share this drive</h2>
+    <label class="check"><input type="checkbox" id="shareTrim" ${state.shareTrim ? "checked" : ""}><span>Hide where it started and finished<br><span class="hint">Recommended. Leaves out postcodes, the date and times, and the mile of route around each end, so nobody can tell where you live or work. Your full drive stays private in your log.</span></span></label>
+    <div class="btn-row">
+      <a class="btn-link btn-wa" href="${esc(waLink(tripShareText(t)))}" target="_blank" rel="noopener">Send on WhatsApp</a>
+      ${hasRoute && canShareFiles() ? `<button data-act="share-native">Share map image…</button>` : ""}
     </div>
+    ${hasRoute ? `<div class="btn-row"><button data-act="share-png">Save map image</button><button data-act="share-json">Save route file</button><button data-act="share-link">Copy Google Maps link</button></div>` : ""}
+    <div class="hint" id="shareMsg">${hasRoute ? "WhatsApp gets a summary with a Google Maps link to the route. Share map image sends the picture of your route instead. The route file (GeoJSON) opens in mapping apps." : "WhatsApp gets a summary of the drive: time, distance, hold-ups and fuel."}</div>
   </section>`;
 }
 function mapsLink(t) {
@@ -901,7 +932,16 @@ function mapsLink(t) {
   return `https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${f(pts[0])}&destination=${f(pts[pts.length - 1])}${way.length ? "&waypoints=" + encodeURIComponent(way.map(f).join("|")) : ""}`;
 }
 async function sharePng(t) {
-  const pts = sharedPoints(t); if (pts.length < 2) return toast("Not enough route to draw.");
+  const blob = await routePng(t); if (!blob) return;
+  try { await saveFile("drive-route.png", blob); } catch (e) { if (e && e.code !== "declined") toast("Saving files isn't available in this view."); }
+}
+async function shareNative(t) {
+  const blob = await routePng(t); if (!blob) return;
+  try { await navigator.share({ files: [new File([blob], "drive-route.png", { type: "image/png" })], text: tripShareText(t).replace(/\nRoute: .*$/, "") }); }
+  catch (e) { if (e && e.name !== "AbortError") toast("Couldn't open sharing on this device."); }
+}
+async function routePng(t) {
+  const pts = sharedPoints(t); if (pts.length < 2) { toast("Not enough route to draw."); return null; }
   const W = 1080, H = 1080, top = 150, c = document.createElement("canvas"); c.width = W; c.height = H;
   const g = c.getContext("2d"), css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
   g.fillStyle = v("--surface"); g.fillRect(0, 0, W, H);
@@ -917,8 +957,7 @@ async function sharePng(t) {
   g.restore();
   g.fillStyle = v("--muted"); g.fillRect(60, H - 70, bar.px, 6); g.font = "400 26px Overpass, system-ui, sans-serif"; g.fillText(bar.miles + " mi", 60, H - 84);
   g.textAlign = "right"; g.fillText(state.shareTrim ? "Drive Log · first and last mile hidden" : "Drive Log", W - 60, H - 64);
-  const blob = await new Promise((r) => c.toBlob(r, "image/png"));
-  try { await saveFile("drive-route.png", blob); } catch (e) { if (e && e.code !== "declined") toast("Saving files isn't available in this view."); }
+  return new Promise((r) => c.toBlob(r, "image/png"));
 }
 async function shareJson(t) {
   const pts = sharedPoints(t); if (pts.length < 2) return toast("Not enough route to save.");
@@ -1128,6 +1167,7 @@ function renderDrive() {
   </section>
   ${renderOffer(a)}
   <span class="label">For a passenger, or once you're parked</span>
+  <a class="btn-link btn-wa" href="${esc(waLink(etaShareText(a)))}" target="_blank" rel="noopener">Send my ETA on WhatsApp</a>
   <div class="controls">
     <button class="btn-slow ${s ? "on" : ""}" data-act="slow">${s ? "Moving again" : "Slow"}</button>
     <button class="btn-break ${b ? "on" : ""}" data-act="break">${b ? "Back on the road" : "Break"}</button>
@@ -1224,6 +1264,7 @@ function renderDetail() {
     ${t.startPhoto || t.endPhoto ? `<div class="photos">${[["startPhoto", "Start", t.odoStart], ["endPhoto", "End", t.odoEnd]].map(([k, l, v]) => t[k] ? `<figure><img src="/_blob/${esc(t[k])}" alt="${l} mileage photo" loading="lazy"><figcaption>${l}${v ? ` · <span class="num">${Number(v).toLocaleString()}</span>` : ""}</figcaption></figure>` : "<span></span>").join("")}</div>` : ""}
   </section>
   ${renderRoute(t)}
+  ${renderShare(t)}
   <section class="panel">
     <h2>Slow points <span class="muted num" style="font-weight:400">${t.slow.length ? "· " + fmtDur(st.slow) + " total" : ""}</span></h2>
     ${t.slow.length ? `<div class="slow-list">${t.slow.map((s) => `<div class="slow-item"><span class="num muted">${fmtTime(s.start)}</span><span><b>${esc(s.reason || (s.auto ? "Slow traffic" : "Slow"))}</b>${s.auto ? ' <span class="tag">Auto</span>' : ""}${s.lat != null ? ` · <a href="https://www.google.com/maps?q=${s.lat},${s.lon}" target="_blank" rel="noopener">Map</a>` : ""}</span><span class="num" style="color:var(--amber);font-weight:600">${fmtDur(s.end - s.start)}</span></div>`).join("")}</div>` : `<div class="muted">No slow points logged. If you remember any, add them with Edit.</div>`}
@@ -1452,6 +1493,7 @@ document.addEventListener("click", async (e) => {
       await store.deleteFill(x.id); state.fuelForm = null; state.confirmFuelDel = false; render(); toast("Fill-up deleted"); break; }
     case "use-mpg": { const id = el.dataset.id, mpg = parseFloat(el.dataset.mpg);
       await store.saveCar({ ...state.car, cars: state.car.cars.map((c) => (c.id === id ? { ...c, mpg } : c)) }); render(); toast(`Fuel costs now use ${mpg} mpg`); break; }
+    case "share-native": shareNative(state.trips.find((x) => x.id === state.detailId)); break;
     case "share-png": sharePng(state.trips.find((x) => x.id === state.detailId)); break;
     case "share-json": shareJson(state.trips.find((x) => x.id === state.detailId)); break;
     case "share-link": { const link = mapsLink(state.trips.find((x) => x.id === state.detailId)), msg = $("#shareMsg"); if (!link) break;
