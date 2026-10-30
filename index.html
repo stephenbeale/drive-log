@@ -232,6 +232,17 @@ summary:focus-visible .chev-btn { outline: 2px solid var(--sign); outline-offset
 .sign-eta .plate { font-size: .85rem; }
 .plate-input { text-transform: uppercase; font-family: var(--f-display); font-weight: 700; letter-spacing: .06em; }
 
+/* Top navigation: the footer tabs repeated under the header, as compact buttons. */
+.toptabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.toptabs button { display: grid; justify-items: center; gap: 3px; padding: 8px 2px 7px; font-size: .74rem; font-weight: 600; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; position: relative; }
+.toptabs svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.toptabs button[aria-current="page"] { color: var(--sign-ink); background: var(--sign); border-color: var(--sign); }
+.toptabs .live-dot { margin-left: 14px; }
+.seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 3px; }
+.seg button { border: 0; background: none; padding: 7px 2px; font-size: .82rem; color: var(--muted); border-radius: 7px; }
+.seg button.on { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+.stat .hint { font-size: .74rem; }
+
 /* Log */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 460px) { .stats { grid-template-columns: 1fr 1fr; } }
@@ -287,12 +298,13 @@ nav.tabs svg { width: 22px; height: 22px; stroke: var(--muted); fill: none; stro
     <h1>Drive Log</h1>
     <span class="store-pill" id="storePill">Connecting…</span>
   </header>
+  <nav class="toptabs" aria-label="Sections"></nav>
   <main id="view"></main>
 </div>
 
 <nav class="tabs" aria-label="Sections">
   <div class="in">
-    <button data-tab="drive" aria-current="page"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 14.5V21M9.6 11.2 3.4 9.5M14.4 11.2l6.2-1.7"/></svg>Drive<span class="live-dot" id="liveDot" hidden></span></button>
+    <button data-tab="drive" aria-current="page"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 14.5V21M9.6 11.2 3.4 9.5M14.4 11.2l6.2-1.7"/></svg>Drive<span class="live-dot" hidden></span></button>
     <button data-tab="log"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Log</button>
     <button data-tab="routes"><svg viewBox="0 0 24 24"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h7a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h7"/></svg>Routes</button>
     <button data-tab="fuel"><svg viewBox="0 0 24 24"><path d="M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M4 21h12M7 8h6"/><path d="M15 10h2a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 0 3 0V8l-3-3"/></svg>Fuel</button>
@@ -351,7 +363,7 @@ const curCar = () => carById(state.car.currentCarId) || state.car.cars[0];
 const OTHER_CAR = "other", OTHER_NAME = "Someone else's vehicle";
 
 const state = {
-  tab: "drive", detailId: null, editing: false, confirmDel: false, confirmDiscard: false, ending: false,
+  tab: "drive", logPeriod: (() => { try { return JSON.parse(localStorage.getItem("drivelog.logPeriod")) || "month"; } catch { return "month"; } })(), detailId: null, editing: false, confirmDel: false, confirmDiscard: false, ending: false,
   car: normaliseSettings(), trips: [], fuel: [], fuelForm: null, editCarId: null, confirmCarDel: false, active: null, mode: "loading",
   gps: "off", gpsSpeed: null, routeFilter: null, shareTrim: true,
 };
@@ -1577,6 +1589,50 @@ function renderEndForm(a, st) {
   </form>`;
 }
 
+const PERIODS = [["week", "This week"], ["month", "This month"], ["year", "This year"], ["all", "All time"]];
+// Start of the period containing `d`, and of the one before it, for comparisons.
+function periodStart(kind, d = new Date(), back = 0) {
+  const x = new Date(d); x.setHours(0, 0, 0, 0);
+  if (kind === "week") { x.setDate(x.getDate() - ((x.getDay() + 6) % 7) - 7 * back); }
+  else if (kind === "month") { x.setDate(1); x.setMonth(x.getMonth() - back); }
+  else if (kind === "year") { x.setMonth(0, 1); x.setFullYear(x.getFullYear() - back); }
+  else return 0;
+  return x.getTime();
+}
+function periodTotals(list) {
+  const rows = list.map((t) => ({ t, st: stats(t) }));
+  const sumOf = (f) => sum(rows, f);
+  const time = sumOf((r) => r.st.moving), miles = sumOf((r) => r.st.miles);
+  const longest = rows.slice().sort((a, b) => b.st.moving - a.st.moving)[0];
+  const routes = {}; rows.forEach((r) => { if (r.t.to) { const k = routeName(r.t); routes[k] = (routes[k] || 0) + 1; } });
+  const top = Object.entries(routes).sort((a, b) => b[1] - a[1])[0];
+  return { n: rows.length, miles, time, cost: sumOf((r) => r.st.cost || 0), slow: sumOf((r) => r.st.slow),
+    avgDrive: rows.length ? time / rows.length : 0, mph: time > 60000 && miles ? miles / (time / 3600000) : null, longest, top };
+}
+function renderSummary() {
+  const kind = state.logPeriod || "month", from = periodStart(kind);
+  const inRange = (a, b) => state.trips.filter((t) => t.startedAt >= a && (b == null || t.startedAt < b));
+  const cur = periodTotals(inRange(from)), before = kind === "all" ? null : periodTotals(inRange(periodStart(kind, new Date(), 1), from));
+  const prev = before && before.n ? before : null; // only compare when the previous period had drives
+  const label = { week: "last week", month: "last month", year: "last year" }[kind];
+  const delta = (a, b, unit) => { const d = Math.round(a - b); return d === 0 ? `same as ${label}` : `${Math.abs(d)} ${unit}${Math.abs(d) === 1 ? "" : "s"} ${d > 0 ? "more" : "fewer"} than ${label}`; };
+  const tile = (l, v, sub = "") => `<div class="stat"><span class="label">${l}</span><span class="v">${v}</span>${sub ? `<span class="hint">${sub}</span>` : ""}</div>`;
+  return `<section class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2>Summary</h2>${state.trips.length ? `<button class="btn-ghost" data-act="export">Export CSV</button>` : ""}</div>
+    <div class="seg" role="tablist">${PERIODS.map(([k, l]) => `<button role="tab" aria-selected="${k === kind}" class="${k === kind ? "on" : ""}" data-act="log-period" data-k="${k}">${l}</button>`).join("")}</div>
+    <div class="stats">
+      ${tile("Drives", cur.n, prev ? delta(cur.n, prev.n, "drive") : "")}
+      ${tile("Miles", Math.round(cur.miles), prev && (cur.miles || prev.miles) ? delta(cur.miles, prev.miles, "mile") : "")}
+      ${tile("At the wheel", cur.time ? fmtDur(cur.time) : "0m")}
+      ${tile("Cost", fmtMoney(cur.cost))}
+      ${tile("Held up", cur.slow ? fmtDur(cur.slow) : "0m", cur.time && cur.slow ? `${Math.round((cur.slow / cur.time) * 100)}% of driving` : "")}
+      ${tile("Average drive", cur.n ? fmtDur(cur.avgDrive) : "–")}
+      ${tile("Average speed", cur.mph ? Math.round(cur.mph) + " mph" : "–")}
+      ${tile("Longest drive", cur.longest ? fmtDur(cur.longest.st.moving) : "–", cur.longest && cur.longest.t.to ? esc(stripPostcodes(cur.longest.t.to)) : "")}
+    </div>
+    ${cur.top && cur.top[1] > 1 ? `<div class="muted" style="font-size:.9rem">Most driven: <b style="color:var(--ink)">${esc(stripPostcodes(cur.top[0]))}</b>, ${cur.top[1]} times</div>` : ""}
+  </section>`;
+}
 function monthTotals() {
   const now = new Date(), m = now.getMonth(), y = now.getFullYear();
   const list = state.trips.filter((t) => { const d = new Date(t.startedAt); return d.getMonth() === m && d.getFullYear() === y; });
@@ -1592,18 +1648,8 @@ function tripRow(t) {
 }
 function renderLog() {
   if (state.detailId) return renderDetail();
-  const mt = monthTotals();
-  const monthName = new Date().toLocaleDateString(undefined, { month: "long" });
   const list = state.routeFilter ? state.trips.filter((t) => routeKey(t) === state.routeFilter) : state.trips;
-  return `<section class="panel">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h2>${esc(monthName)} so far</h2>${state.trips.length ? `<button class="btn-ghost" data-act="export">Export CSV</button>` : ""}</div>
-    <div class="stats">
-      <div class="stat"><span class="label">Drives</span><span class="v">${mt.n}</span></div>
-      <div class="stat"><span class="label">Miles</span><span class="v">${Math.round(mt.miles)}</span></div>
-      <div class="stat"><span class="label">At the wheel</span><span class="v">${fmtDur(mt.time).replace(/ \d+s$/, "")}</span></div>
-      <div class="stat"><span class="label">Fuel</span><span class="v">${fmtMoney(mt.cost)}</span></div>
-    </div>
-  </section>
+  return `${renderSummary()}
   <section class="panel" style="gap:0">
     ${state.routeFilter ? `<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px"><span class="label">Filtered to one route</span><button class="btn-ghost" data-act="clear-filter">Show all</button></div>` : ""}
     ${list.length ? list.map(tripRow).join("") : renderEmpty()}
@@ -1844,8 +1890,8 @@ function softRender() {
 function render() {
   const pill = $("#storePill");
   pill.textContent = { loading: "Connecting…", cloud: "Saved to your account", local: "Saved on this device" }[state.mode];
-  document.querySelectorAll("nav.tabs button").forEach((b) => b.dataset.tab === state.tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
-  $("#liveDot").hidden = !state.active;
+  document.querySelectorAll("[data-tab]").forEach((b) => b.dataset.tab === state.tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
+  document.querySelectorAll(".live-dot").forEach((d) => (d.hidden = !state.active));
   const v = $("#view");
   v.style.display = "grid"; v.style.gap = "14px";
   v.innerHTML = state.tab === "drive" ? renderDrive() : state.tab === "log" ? renderLog() : state.tab === "routes" ? renderRoutes() : state.tab === "fuel" ? renderFuel() : renderCar();
@@ -1948,6 +1994,7 @@ document.addEventListener("click", async (e) => {
     case "samples": el.disabled = true; await addSamples(); break;
     case "clear-samples": for (const t of state.trips.filter((x) => x.sample)) await store.deleteTrip(t.id); render(); toast("Sample drives removed"); break;
     case "export": exportCsv(); break;
+    case "log-period": state.logPeriod = el.dataset.k; store.local.set("logPeriod", el.dataset.k); render(); break;
     case "eta-note-example": { const ta = el.closest(".field").querySelector("textarea"); ta.value = ETA_NOTE_EXAMPLE; await store.saveCar({ ...state.car, etaNote: ETA_NOTE_EXAMPLE }); el.remove(); toast("Note saved"); break; }
     case "share-text": navigator.share({ title: el.dataset.subject, text: el.dataset.text }).catch(() => {}); break;
     case "pick-car": state.driveCarId = el.dataset.id; document.querySelectorAll('[data-act="pick-car"]').forEach((c) => c.classList.toggle("on", c.dataset.id === el.dataset.id));
@@ -2076,6 +2123,7 @@ document.addEventListener("submit", async (e) => {
   }
 });
 
+document.querySelector(".toptabs").innerHTML = document.querySelector("nav.tabs .in").innerHTML;
 render();
 store.init();
 })();
