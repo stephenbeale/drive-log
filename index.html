@@ -249,6 +249,8 @@ function normaliseSettings(raw = {}) {
 }
 const carById = (id) => state.car.cars.find((c) => c.id === id);
 const curCar = () => carById(state.car.currentCarId) || state.car.cars[0];
+// Drives in someone else's car log the time only: no fuel cost, nothing to set up.
+const OTHER_CAR = "other", OTHER_NAME = "Someone else's car";
 
 const state = {
   tab: "drive", detailId: null, editing: false, confirmDel: false, confirmDiscard: false, ending: false,
@@ -290,7 +292,8 @@ function stats(t, now = Date.now()) {
   const moving = Math.max(0, total - brk);
   const miles = t.endedAt ? (t.distance || 0) : (t.gpsMiles || 0);
   const avg = miles && moving > 60000 ? miles / (moving / 3600000) : null;
-  const c = carById(t.carId) || curCar(), mpg = t.mpg ?? c.mpg, ppl = t.ppl ?? c.ppl;
+  const other = t.carId === OTHER_CAR, c = other ? {} : carById(t.carId) || curCar();
+  const mpg = other ? null : t.mpg ?? c.mpg, ppl = other ? null : t.ppl ?? c.ppl;
   const litres = miles && mpg ? (miles / mpg) * LITRES_PER_UK_GALLON : null;
   const cost = litres != null && ppl ? (litres * ppl) / 100 : null;
   return { total, brk, slow, moving, miles, avg, litres, cost, end };
@@ -546,6 +549,29 @@ function fillDistanceFromMileage() {
 }
 const photoBtn = (which) => `<label class="btn-photo"><input type="file" accept="image/*" capture="environment" data-photo="${which}" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4V8Z"/><circle cx="12" cy="13.2" r="3.4"/></svg>Photo</label>`;
 
+/* ---------- estimated MPG ---------- */
+// Typical real-world petrol MPG for each kind of car, and the engine size that figure assumes.
+const BODIES = { "City car": [52, 1.0], "Small hatchback": [47, 1.2], "Family hatchback": [42, 1.5], "Saloon or estate": [40, 1.8], "SUV or 4x4": [36, 2.0], "MPV or people carrier": [38, 1.8], "Sports car": [31, 2.5], Van: [34, 2.0] };
+const FUEL_FACTOR = { Petrol: 1, Diesel: 1.2, Hybrid: 1.3, LPG: 0.8 };
+function estimateMpgRule({ body, engine, fuel }) {
+  const [base, typical] = BODIES[body] || BODIES["Family hatchback"];
+  const size = engine > 0 ? Math.min(Math.max((typical / engine) ** 0.35, 0.75), 1.25) : 1;
+  return Math.round(base * size * (FUEL_FACTOR[fuel] || 1));
+}
+async function estimateMpg(car) {
+  const sample = await getSample();
+  if (sample && car.name && !/^my car$/i.test(car.name)) {
+    try {
+      const r = await sample.json(
+        `Estimate the typical real-world fuel economy in UK (imperial) MPG for this car: "${car.name}", ${car.fuel}${car.engine ? `, ${car.engine} litre engine` : ""}${car.body ? `, ${car.body.toLowerCase()}` : ""}. ` +
+        'Use real-world figures drivers report, not the official brochure figure. Reply with JSON only: {"mpg": <number>, "basis": "<under 12 words, e.g. typical for a 1.5 petrol family hatchback>"}. Use {"mpg": null} if you cannot tell what car this is.',
+        { modelTier: "quick" });
+      if (r && +r.mpg > 10 && +r.mpg < 120) return { mpg: Math.round(+r.mpg), basis: r.basis || "Claude's estimate for this model" };
+    } catch {}
+  }
+  return { mpg: estimateMpgRule(car), basis: `typical for a ${car.engine ? car.engine + " litre " : ""}${car.fuel.toLowerCase()} ${(car.body || "Family hatchback").toLowerCase()}` };
+}
+
 /* ---------- fuel ---------- */
 const BRANDS = ["BP", "Shell", "Esso", "Tesco", "Sainsbury's", "Asda", "Morrisons", "Texaco", "Jet", "Gulf", "Murco", "Applegreen", "MFG", "Costco", "Co-op", "Harvest", "Rontec", "Moto", "Welcome Break", "Roadchef"];
 function parseReceipt(raw) {
@@ -635,9 +661,10 @@ function fuelStats(carId) {
   const latest = fills.slice().sort((a, b) => b.at - a.at)[0];
   return { fills, perFill, mpg: litres ? miles / (litres / LITRES_PER_UK_GALLON) : null, monthSpend, latest, total: sum(fills, (x) => x.total || 0) };
 }
-function carChips(selectedId, act) {
-  if (state.car.cars.length < 2) return "";
-  return `<div class="chips">${state.car.cars.map((c) => `<button type="button" class="chip ${c.id === selectedId ? "on" : ""}" data-act="${act}" data-id="${esc(c.id)}">${esc(c.name)}</button>`).join("")}</div>`;
+function carChips(selectedId, act, withOther = false) {
+  if (state.car.cars.length < 2 && !withOther) return "";
+  const list = [...state.car.cars, ...(withOther ? [{ id: OTHER_CAR, name: OTHER_NAME }] : [])];
+  return `<div class="chips">${list.map((c) => `<button type="button" class="chip ${c.id === selectedId ? "on" : ""}" data-act="${act}" data-id="${esc(c.id)}">${esc(c.name)}</button>`).join("")}</div>`;
 }
 function renderFuel() {
   const carId = state.fuelCarId && carById(state.fuelCarId) ? state.fuelCarId : state.car.currentCarId, car = carById(carId);
@@ -787,8 +814,8 @@ const openSlow = () => state.active && state.active.slow.find((s) => !s.end);
 const openBreak = () => state.active && state.active.breaks.find((b) => !b.end);
 
 function startDrive(from, to, odoStart) {
-  state.active = { id: uid(), from, to, startedAt: Date.now(), slow: [], breaks: [], gpsMiles: 0, odoStart: odoStart || null, autoSlow: true, carId: state.car.currentCarId, kind: state.kind || null, recordRoute: document.getElementById("recordRoute") ? document.getElementById("recordRoute").checked : true, track: [], startPhoto: state.pendingStartPhoto || null, fromCoords: state.fromCoords || null };
-  state.pendingStartPhoto = null; state.fromCoords = null; state.kind = null;
+  state.active = { id: uid(), from, to, startedAt: Date.now(), slow: [], breaks: [], gpsMiles: 0, odoStart: odoStart || null, autoSlow: true, carId: state.driveCarId || state.car.currentCarId, kind: state.kind || null, recordRoute: document.getElementById("recordRoute") ? document.getElementById("recordRoute").checked : true, track: [], startPhoto: state.pendingStartPhoto || null, fromCoords: state.fromCoords || null };
+  state.pendingStartPhoto = null; state.fromCoords = null; state.kind = null; state.driveCarId = null;
   const e = expectFor(routeKey(state.active), state.active.startedAt);
   if (e) state.active.expect = { ms: e.ms, text: expectText(e) };
   store.saveActive();
@@ -1071,7 +1098,7 @@ async function finishDrive(form) {
     gpsMiles: Math.round((a.gpsMiles || 0) * 10) / 10,
     odoStart: odoStart || null, odoEnd: odoEnd || null,
     slow: a.slow.filter((s) => s.end - s.start >= 5000), breaks: a.breaks.filter((b) => b.end - b.start >= 5000),
-    notes: form.notes.value.trim(), ...(() => { const c = carById(a.carId) || curCar(); return { carId: c.id, car: c.name, mpg: c.mpg, ppl: c.ppl }; })(),
+    notes: form.notes.value.trim(), ...(() => { if (a.carId === OTHER_CAR) return { carId: OTHER_CAR, car: OTHER_NAME, mpg: null, ppl: null }; const c = carById(a.carId) || curCar(); return { carId: c.id, car: c.name, mpg: c.mpg, ppl: c.ppl }; })(),
     startPhoto: a.startPhoto || null, endPhoto: state.endPhoto || null,
     kind: a.kind || null,
     track: a.recordRoute && a.track && a.track.length > 1 ? a.track : null,
@@ -1137,7 +1164,7 @@ function renderDrive() {
           <div class="field"><label for="to">To</label><input id="to" name="to" list="placesList" placeholder="Where to?" autocomplete="off"></div>
         </div>
         <div class="hint" id="expectMsg"></div>
-        ${state.car.cars.length > 1 ? `<div class="field"><span class="label">Car</span>${carChips(state.car.currentCarId, "pick-car")}</div>` : ""}
+        <div class="field"><span class="label">Car</span>${carChips(state.driveCarId || state.car.currentCarId, "pick-car", true)}<div class="hint" id="otherHint" ${state.driveCarId === OTHER_CAR ? "" : "hidden"}>Just the time and route are logged, with no fuel cost.</div></div>
         <div class="field"><label for="kindText">What's this drive for? (optional)</label>
           <div class="chips" id="kindChips">${allKinds().map((k) => `<button type="button" class="chip ${state.kind === k ? "on" : ""}" data-act="kind" data-k="${esc(k)}">${esc(k)}</button>`).join("")}</div>
           <input id="kindText" name="kind" maxlength="40" autocomplete="off" placeholder="Or type your own, e.g. Tennis or Music lesson" value="${esc(state.kind || "")}">
@@ -1168,7 +1195,7 @@ function renderDrive() {
       <div class="sign-route"><span>${esc(a.from || "Start")}</span><span class="arrow">→</span><span>${esc(a.to || "Somewhere")}</span></div>
       ${status}
       <div class="clock" id="liveClock">${fmtClock(st.total)}</div>
-      ${state.car.cars.length > 1 && carById(a.carId) ? `<div class="sign-eta">${esc(carById(a.carId).name)}</div>` : ""}
+      ${a.carId === OTHER_CAR ? `<div class="sign-eta">${OTHER_NAME}</div>` : state.car.cars.length > 1 && carById(a.carId) ? `<div class="sign-eta">${esc(carById(a.carId).name)}</div>` : ""}
       ${a.expect ? `<div class="sign-eta">${esc(a.expect.text)} · arrive about <b class="num">${fmtTime(a.startedAt + a.expect.ms + st.brk)}</b></div>` : ""}
       <div class="sign-stats">
         <span><span class="label">Moving</span> <b id="liveMoving">${fmtDur(st.moving)}</b></span>
@@ -1220,7 +1247,7 @@ function monthTotals() {
 function tripRow(t) {
   const st = stats(t);
   return `<button class="trip" data-act="open" data-id="${esc(t.id)}">
-    <div class="trip-head"><span class="trip-route">${esc(routeName(t))} ${t.kind ? `<span class="tag">${esc(t.kind)}</span>` : ""} ${state.car.cars.length > 1 && t.car ? `<span class="tag">${esc(t.car)}</span>` : ""} ${t.sample ? '<span class="tag">Sample</span>' : ""}</span><span class="trip-dur">${fmtDur(st.moving)}</span></div>
+    <div class="trip-head"><span class="trip-route">${esc(routeName(t))} ${t.kind ? `<span class="tag">${esc(t.kind)}</span>` : ""} ${t.carId === OTHER_CAR ? '<span class="tag">Not my car</span>' : state.car.cars.length > 1 && t.car ? `<span class="tag">${esc(t.car)}</span>` : ""} ${t.sample ? '<span class="tag">Sample</span>' : ""}</span><span class="trip-dur">${fmtDur(st.moving)}</span></div>
     <div class="tl" aria-hidden="true">${timelineInner(t, st)}</div>
     <div class="trip-meta"><span>${fmtDate(t.startedAt)} · ${fmtTime(t.startedAt)}</span><span class="num">${fmtMi(st.miles)}</span>${st.avg ? `<span class="num">${Math.round(st.avg)} mph avg</span>` : ""}${st.slow > 30000 ? `<span class="slow">${fmtDur(st.slow)} slow</span>` : ""}<span class="num">${fmtMoney(st.cost)}</span></div>
   </button>`;
@@ -1360,12 +1387,17 @@ function renderCar() {
   <form id="carForm" class="panel">
     <h2>${c.id === "new" ? "New car" : "Edit " + esc(c.name)}</h2>
     <input type="hidden" name="carId" value="${esc(c.id)}">
-    <div class="field"><label for="carName">Name</label><input id="carName" name="name" value="${esc(c.name)}" placeholder="e.g. Golf 1.5 TSI"></div>
+    <div class="field"><label for="carName">Make and model</label><input id="carName" name="name" value="${esc(c.name)}" placeholder="e.g. VW Golf 1.5 TSI"></div>
+    <div class="row">
+      <div class="field"><label for="carBody">Type</label><select id="carBody" name="body">${Object.keys(BODIES).map((b) => `<option ${(c.body || "Family hatchback") === b ? "selected" : ""}>${b}</option>`).join("")}</select></div>
+      <div class="field"><label for="carEngine">Engine size (litres)</label><input id="carEngine" name="engine" type="number" inputmode="decimal" step="0.1" min="0.6" max="7" placeholder="e.g. 1.5" value="${c.engine ?? ""}"></div>
+    </div>
     <div class="row3">
       <div class="field"><label for="carFuel">Fuel</label><select id="carFuel" name="fuel">${FUELS.map((f) => `<option ${c.fuel === f ? "selected" : ""}>${f}</option>`).join("")}</select></div>
       <div class="field"><label for="carMpg">MPG (UK)</label><input id="carMpg" name="mpg" type="number" step="0.1" min="1" required value="${c.mpg}"></div>
       <div class="field"><label for="carPpl">Pence / litre</label><input id="carPpl" name="ppl" type="number" step="0.1" min="1" required value="${c.ppl}"></div>
     </div>
+    <div class="here"><button type="button" data-act="est-mpg">Estimate MPG for this car</button><span class="hint" id="mpgHint">Don't know your MPG? Fill in the car above and get a typical real-world figure.</span></div>
     <div class="muted" style="font-size:.85rem">Use the real-world MPG from your trip computer, or let the Fuel tab measure it from your fill-ups. The price updates itself when you add a fill-up. Saved drives keep the price they were logged with.</div>
     <div class="panel" style="background:var(--bg)">
       <div class="stats" style="grid-template-columns:repeat(3,1fr)">
@@ -1490,8 +1522,13 @@ document.addEventListener("click", async (e) => {
     case "samples": el.disabled = true; await addSamples(); break;
     case "clear-samples": for (const t of state.trips.filter((x) => x.sample)) await store.deleteTrip(t.id); render(); toast("Sample drives removed"); break;
     case "export": exportCsv(); break;
-    case "pick-car": state.car.currentCarId = el.dataset.id; store.saveCar({ ...state.car }); document.querySelectorAll('[data-act="pick-car"]').forEach((c) => c.classList.toggle("on", c.dataset.id === el.dataset.id)); break;
+    case "pick-car": state.driveCarId = el.dataset.id; document.querySelectorAll('[data-act="pick-car"]').forEach((c) => c.classList.toggle("on", c.dataset.id === el.dataset.id));
+      { const h = $("#otherHint"); if (h) h.hidden = el.dataset.id !== OTHER_CAR; } break;
     case "car-edit": state.editCarId = el.dataset.id; state.confirmCarDel = false; render(); break;
+    case "est-mpg": { const f = $("#carForm"), hint = $("#mpgHint"); el.disabled = true; hint.className = "hint"; hint.textContent = "Estimating…";
+      const r = await estimateMpg({ name: f.name.value.trim(), fuel: f.fuel.value, body: f.body.value, engine: parseFloat(f.engine.value) || null });
+      f.mpg.value = r.mpg; el.disabled = false;
+      hint.textContent = `About ${r.mpg} mpg, ${r.basis}. Save the car to use it. Your fill-ups on the Fuel tab will measure the real figure.`; break; }
     case "car-new": state.editCarId = "new"; state.confirmCarDel = false; render(); $("#carName")?.focus(); break;
     case "car-del": state.confirmCarDel = true; render(); break;
     case "car-del-no": state.confirmCarDel = false; render(); break;
@@ -1542,7 +1579,7 @@ document.addEventListener("submit", async (e) => {
     const b = f.querySelector('[type="submit"]'); if (b) b.disabled = false;
   } else if (f.id === "carForm") {
     const id = f.carId.value === "new" ? uid() : f.carId.value;
-    const car = { id, name: f.name.value.trim() || "My car", fuel: f.fuel.value, mpg: parseFloat(f.mpg.value), ppl: parseFloat(f.ppl.value) };
+    const car = { id, name: f.name.value.trim() || "My car", fuel: f.fuel.value, body: f.body.value, engine: parseFloat(f.engine.value) || null, mpg: parseFloat(f.mpg.value), ppl: parseFloat(f.ppl.value) };
     const cars = state.car.cars.some((x) => x.id === id) ? state.car.cars.map((x) => (x.id === id ? car : x)) : [...state.car.cars, car];
     const makeDefault = f.carId.value === "new" ? false : f.makeDefault && f.makeDefault.checked;
     await store.saveCar({ ...state.car, cars, currentCarId: makeDefault ? id : state.car.currentCarId });
