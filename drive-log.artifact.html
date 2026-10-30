@@ -73,6 +73,7 @@ button:disabled { opacity: .5; cursor: default; }
 .ico { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .ico.solid { fill: currentColor; stroke: none; }
 .ico-pair { display: inline-flex; gap: 2px; }
+.end-row { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; }
 .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: 8px; }
 /* Black screen while driving: pure black (near-off on OLED phones), deliberately hard to read. */
 .blackout { position: fixed; inset: 0; z-index: 50; background: #000; color: #3a3a3a; display: grid; place-items: center; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
@@ -824,6 +825,7 @@ const ICON = {
   restart: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.3-5.4"/><path d="M4.5 3.8v4.6h4.6"/></svg>',
   tortoise: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 15.5a7 6.2 0 0 1 14 0Z"/><path d="m8.2 10.6 3.3 4.9 3.3-4.9"/><path d="M18.5 15.5h1.3a2 2 0 0 0 2-2v-1h-2.5"/><path d="M7 15.5v2.5M16 15.5v2.5M4.5 15.5 2.5 17"/></svg>',
   eyeOff: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c5.5 0 9.5 5.2 10 7-.2.7-1 2.1-2.3 3.5M6.6 6.6C4.3 8 2.6 10.6 2 12c.5 1.8 4.5 7 10 7 1.9 0 3.6-.6 5.1-1.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
+  bin: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   flag: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 21V3.5"/><path d="M5.5 4h12l-2.5 4.5 2.5 4.5h-12"/></svg>',
 };
 
@@ -857,7 +859,7 @@ function scheduleBlack(delay = 20000) {
   if (!state.active || !prefBlack()) return;
   blackTimer = setTimeout(() => {
     const typing = document.activeElement && document.activeElement.matches("input, textarea, select");
-    if (state.active && state.tab === "drive" && !openPause() && !state.ending && !state.offer && !state.confirmRestart && !typing) setBlack(true);
+    if (state.active && state.tab === "drive" && !openPause() && !state.ending && !state.offer && !state.confirmRestart && !state.confirmDiscard && !typing) setBlack(true);
     else scheduleBlack();
   }, delay);
 }
@@ -1305,7 +1307,8 @@ function renderDrive() {
     ${state.gps === "on" && a.recordRoute ? `<div class="hint">Recording your route for the map.</div>` : ""}
     ${state.gps === "on" ? `<label style="display:flex;gap:8px;align-items:center;font-size:.85rem"><input type="checkbox" id="autoSlow" style="width:auto" ${a.autoSlow ? "checked" : ""}> Mark slow points automatically (under 12 mph for a minute)</label>` : ""}
   </section>
-  ${state.ending ? renderEndForm(a, st) : `<button class="btn-primary btn-big btn-ico" data-act="end">${ICON.flag}Finish drive</button>`}`;
+  ${state.ending ? renderEndForm(a, st) : (state.confirmDiscard ? `<div class="confirm"><div>Discard this drive? The time, slow points and route won't be saved to your log.</div><div class="btn-row"><button class="btn-danger" data-act="discard-yes">Discard drive</button><button data-act="discard-no">Keep it</button></div></div>`
+    : `<div class="end-row"><button class="btn-primary btn-big btn-ico" data-act="end">${ICON.flag}Finish drive</button><button class="btn-big btn-ico btn-danger" data-act="discard">${ICON.bin}Discard</button></div>`)}`;
 }
 function renderEndForm(a, st) {
   return `<form id="endForm" class="panel">
