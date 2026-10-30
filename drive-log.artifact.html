@@ -167,6 +167,16 @@ details.eta-note > summary { cursor: pointer; list-style: none; display: flex; j
 details.eta-note > summary::-webkit-details-marker { display: none; }
 details.eta-note .chev-btn { width: 28px; height: 28px; }
 details.eta-note[open] > summary { margin-bottom: 8px; }
+.done { border: 2px solid var(--sign-text); gap: 12px; }
+.done-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.done-time { font-size: 2.2rem; font-weight: 600; line-height: 1; }
+.cmp { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cmp li { display: flex; gap: 10px; align-items: baseline; }
+.cmp li::before { content: ""; width: 9px; height: 9px; border-radius: 50%; flex: none; transform: translateY(-1px); background: var(--brk); }
+.cmp li.good::before { background: var(--good); }
+.cmp li.bad::before { background: var(--amber-fill); }
+.done-actions { display: grid; gap: 8px; }
+.done-actions .btn-ico { padding: 14px; font-size: 1rem; }
 .send-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; }
 .send-row .btn-link { padding: 10px 6px; font-size: .9rem; gap: 6px; }
 .send-row .ico { width: 18px; height: 18px; }
@@ -1389,7 +1399,7 @@ async function finishDrive(form = null) {
   const ok = await store.saveTrip(trip);
   if (!ok) return;
   stopLive(); state.active = null; state.ending = false; state.endPhoto = null; store.saveActive();
-  state.tab = "log"; state.detailId = trip.id; state.tidyId = trip.id; state.tidyDraft = {}; render();
+  state.tab = "log"; state.detailId = trip.id; state.tidyId = trip.id; state.finishedId = trip.id; state.tidyDraft = {}; render();
   toast("Drive saved");
   // Name where the drive started and ended, if it isn't known yet, so tidying up is mostly confirming.
   const nameEnd = async (field, coords) => {
@@ -1596,11 +1606,9 @@ function renderDetail() {
   const t = state.trips.find((x) => x.id === state.detailId);
   if (!t) { state.detailId = null; return renderLog(); }
   const st = stats(t);
-  const others = state.trips.filter((x) => routeKey(x) === routeKey(t) && x.distance >= 0);
-  const avgOther = others.length > 1 ? sum(others, (x) => stats(x).moving) / others.length : null;
-  const cmp = avgOther ? st.moving - avgOther : null;
   if (state.editing) return renderEdit(t);
   return `<button class="btn-ghost" data-act="back" style="justify-self:start">← All drives</button>
+  ${state.finishedId === t.id ? renderFinished(t) : ""}
   ${state.tidyId === t.id ? renderTidy(t) : ""}
   <section class="panel">
     <div style="display:grid;gap:4px"><span class="label">${fmtDate(t.startedAt)} · ${fmtTime(t.startedAt)}–${fmtTime(t.endedAt)}${t.sample ? " · Sample" : ""}</span><h2 style="font-size:1.35rem">${esc(routeName(t))}</h2></div>
@@ -1616,11 +1624,11 @@ function renderDetail() {
       ${st.brk ? `<span>${fmtDur(st.brk)} on breaks</span>` : ""}
       ${t.gaps && t.gaps.length ? `<span style="color:var(--amber)">Tracking stopped for ${fmtDur(sum(t.gaps, (g) => g.end - g.start))} while the screen was off</span>` : ""}
       ${!t.distance && trackMiles(t) ? `<span>Distance measured from the route</span>` : ""}
-      ${cmp != null ? `<span style="color:${cmp > 0 ? "var(--bad)" : "var(--good)"}">${fmtDur(Math.abs(cmp))} ${cmp > 0 ? "slower" : "quicker"} than your usual on this route</span>` : ""}
     </div>
     ${t.notes ? `<div style="white-space:pre-wrap">${esc(t.notes)}</div>` : ""}
     ${t.startPhoto || t.endPhoto ? `<div class="photos">${[["startPhoto", "Start", t.odoStart], ["endPhoto", "End", t.odoEnd]].map(([k, l, v]) => t[k] ? `<figure><img src="/_blob/${esc(t[k])}" alt="${l} mileage photo" loading="lazy"><figcaption>${l}${v ? ` · <span class="num">${Number(v).toLocaleString()}</span>` : ""}</figcaption></figure>` : "<span></span>").join("")}</div>` : ""}
   </section>
+  ${state.finishedId !== t.id && compareLines(t).length ? fold("compare", "How it compares", compareList(compareLines(t)), true) : ""}
   ${renderRoute(t)}
   ${renderShare(t)}
   ${fold("slow", `Slow points <span class="muted num" style="font-weight:400">${t.slow.length ? "· " + fmtDur(st.slow) + " total" : ""}</span>`, `
@@ -1628,12 +1636,59 @@ function renderDetail() {
   ${state.confirmDel ? `<div class="confirm"><div>Delete this drive from your log? This can't be undone.</div><div class="btn-row"><button class="btn-danger" data-act="del-yes">Delete drive</button><button data-act="del-no">Keep it</button></div></div>`
     : `<div class="btn-row"><button data-act="edit">Edit or add slow points</button><button data-act="again">Drive this route again</button><button class="btn-danger" data-act="del">Delete</button></div>`}`;
 }
+/* ---------- how a drive compares ---------- */
+const normPlace = (x) => stripPostcodes(x || "").trim().toLowerCase();
+const nearTime = (a, b) => Math.abs(a - b) <= Math.max(120000, b * 0.08);
+function compareLines(t) {
+  const st = stats(t), out = [];
+  const diff = (ms, base, what) => nearTime(ms, base) ? { text: `About the same as ${what} (${fmtDur(base)})`, tone: "same" }
+    : ms < base ? { text: `${fmtDur(base - ms)} quicker than ${what}`, tone: "good" } : { text: `${fmtDur(ms - base)} slower than ${what}`, tone: "bad" };
+  if (t.to && t.from) {
+    const others = state.trips.filter((x) => x.id !== t.id && x.endedAt && routeKey(x) === routeKey(t));
+    if (others.length) {
+      const times = others.map((x) => stats(x).moving), typ = median(times);
+      out.push(diff(st.moving, typ, `your usual ${fmtDur(typ)} on this route`));
+      if (others.length >= 2 && st.moving < Math.min(...times)) out.push({ text: "Your quickest run on this route yet", tone: "good" });
+      const sim = others.filter((x) => Math.abs(minuteOfDay(x.startedAt) - minuteOfDay(t.startedAt)) <= 75 && dayType(x.startedAt) === dayType(t.startedAt));
+      if (sim.length >= 2 && sim.length < others.length) { const m = median(sim.map((x) => stats(x).moving)); out.push(diff(st.moving, m, `${DAY_PHRASE[dayType(t.startedAt)]} at this time of day`)); }
+    } else out.push({ text: "Your first drive on this route. Next time you'll see how it compares.", tone: "same" });
+    // The journey the other way: the most recent one, described by when it was.
+    const back = state.trips.filter((x) => x.id !== t.id && x.endedAt && normPlace(x.from) === normPlace(t.to) && normPlace(x.to) === normPlace(t.from)).sort((a, b) => b.startedAt - a.startedAt)[0];
+    if (back) {
+      const sameDay = isoDay(back.startedAt) === isoDay(t.startedAt);
+      const what = sameDay ? (back.startedAt < t.startedAt ? "the way there" : "the way back") : `the other way on ${fmtDate(back.startedAt)}`;
+      out.push(diff(st.moving, stats(back).moving, what));
+    }
+  }
+  if (st.slow > 60000) {
+    const r = {}; t.slow.forEach((x) => { const k = x.reason || "slow traffic"; r[k] = (r[k] || 0) + (x.end - x.start); });
+    const top = Object.entries(r).sort((a, b) => b[1] - a[1])[0];
+    out.push({ text: `Held up for ${fmtDur(st.slow)}, mostly ${top[0].toLowerCase()}`, tone: "bad" });
+  } else if (st.moving > 120000) out.push({ text: "A clear run, with no hold-ups", tone: "good" });
+  return out;
+}
+const compareList = (lines) => `<ul class="cmp">${lines.map((l) => `<li class="${l.tone}">${esc(l.text)}</li>`).join("")}</ul>`;
+function renderFinished(t) {
+  const st = stats(t), lines = compareLines(t);
+  const back = t.to && t.from;
+  return `<section class="panel done">
+    <span class="label">Drive done</span>
+    <div class="done-head"><span class="done-time num">${fmtDur(st.moving)}</span><span class="muted">${[st.miles ? fmtMi(st.miles) : null, st.cost != null ? fmtMoney(st.cost) : null].filter(Boolean).join(" · ")}</span></div>
+    ${lines.length ? compareList(lines) : ""}
+    ${!t.to ? `<div class="hint">Add where you went below to see how this compares with your other drives.</div>` : ""}
+    <div class="done-actions">
+      ${back ? `<button class="btn-primary btn-ico" data-act="quick" data-from="${esc(t.to)}" data-to="${esc(t.from)}" data-kind="">${ICON.restart}Drive back to ${esc(stripPostcodes(t.from))}</button>` : ""}
+      <button class="${back ? "" : "btn-primary "}btn-ico" data-act="new-drive">${ICON.play}Start a new drive</button>
+      <button class="btn-ghost" data-act="done">Done</button>
+    </div>
+  </section>`;
+}
 function renderTidy(t) {
   const d = state.tidyDraft || {}, v = (k) => (d[k] !== undefined ? d[k] : t[k] || "");
   const carId = d.carId || t.carId || state.car.currentCarId, vu = (carById(carId) || {}).uses || [];
   const kind = d.kind !== undefined || t.kind ? v("kind") : vu.length === 1 ? USE_TO_KIND[vu[0]] || vu[0] : "";
   return `<form id="tidyForm" class="panel tidy">
-    <h2>Drive saved. What was it?</h2>
+    <h2>What was it?</h2>
     <div class="row">
       <div class="field"><label for="tFrom">From</label><input id="tFrom" list="placesList3" autocomplete="off" placeholder="e.g. Home" value="${esc(v("from"))}"></div>
       <div class="field"><label for="tTo">To</label><input id="tTo" list="placesList3" autocomplete="off" placeholder="Where did you go?" value="${esc(v("to"))}"></div>
@@ -1819,12 +1874,12 @@ async function exportCsv() {
 /* ---------- events ---------- */
 document.addEventListener("click", async (e) => {
   const tabBtn = e.target.closest("[data-tab]");
-  if (tabBtn) { state.tab = tabBtn.dataset.tab; state.detailId = null; state.tidyId = null; state.editing = state.confirmDel = false; state.fuelForm = null; render(); window.scrollTo(0, 0); return; }
+  if (tabBtn) { state.tab = tabBtn.dataset.tab; state.detailId = null; state.tidyId = null; state.finishedId = null; state.editing = state.confirmDel = false; state.fuelForm = null; render(); window.scrollTo(0, 0); return; }
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act;
   switch (act) {
     case "swap": { const f = $("#from"), t = $("#to"); [f.value, t.value] = [t.value, f.value]; break; }
-    case "quick": if (state.active) { state.tab = "drive"; render(); break; } state.kind = el.dataset.kind || null; startDrive(el.dataset.from, el.dataset.to, null); state.tab = "drive"; render(); break;
+    case "quick": state.detailId = state.tidyId = state.finishedId = null; if (state.active) { state.tab = "drive"; render(); break; } state.kind = el.dataset.kind || null; startDrive(el.dataset.from, el.dataset.to, null); state.tab = "drive"; render(); break;
     case "use-toggle": case "ask-use": el.classList.toggle("on"); break;
     case "ask-save": case "ask-later": { const id = el.dataset.id, uses = act === "ask-save" ? [...document.querySelectorAll('[data-act="ask-use"].on')].map((x) => x.dataset.use) : null;
       await store.saveCar({ ...state.car, cars: state.car.cars.map((c) => (c.id === id ? { ...c, usesAsked: true, ...(uses ? { uses } : {}) } : c)) });
@@ -1862,7 +1917,9 @@ document.addEventListener("click", async (e) => {
     case "discard-no": state.confirmDiscard = false; render(); break;
     case "discard-yes": discardDrive(); break;
     case "open": state.detailId = el.dataset.id; state.confirmDel = state.editing = false; render(); window.scrollTo(0, 0); break;
-    case "back": state.detailId = null; state.tidyId = null; render(); break;
+    case "done": state.detailId = null; state.tidyId = null; state.finishedId = null; render(); window.scrollTo(0, 0); break;
+    case "new-drive": if (!state.active) { state.tab = "drive"; state.detailId = state.tidyId = state.finishedId = null; state.kind = null; startDrive("", "", null); window.scrollTo(0, 0); } break;
+    case "back": state.detailId = null; state.tidyId = null; state.finishedId = null; render(); break;
     case "edit": state.editing = true; render(); break;
     case "cancel-edit": state.editing = false; render(); break;
     case "del": state.confirmDel = true; render(); break;
