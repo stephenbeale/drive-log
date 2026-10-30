@@ -95,6 +95,11 @@ button:disabled { opacity: .5; cursor: default; }
 .bo-dot { width: 8px; height: 8px; border-radius: 50%; background: #5a1010; }
 .bo-hint { font-size: .78rem; color: #2a2a2a; }
 .blackout.holding .bo-hint { color: #777; }
+.bo-bar { width: 120px; height: 3px; border-radius: 2px; background: #111; overflow: hidden; }
+.bo-bar i { display: block; height: 100%; width: 0; background: #555; }
+.blackout.holding .bo-bar i { width: 100%; transition: width .8s linear; }
+.act.nudge { background: var(--sign); color: var(--sign-ink); border-color: var(--sign); }
+@media (prefers-reduced-motion: no-preference) { .act.nudge { animation: nudge 2.4s ease-in-out infinite; } @keyframes nudge { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--sign) 25%, transparent); } } }
 .act { display: grid; justify-items: center; gap: 6px; padding: 14px 6px 12px; font-size: .95rem; }
 .act.primary { background: var(--sign); color: var(--sign-ink); border-color: var(--sign); }
 .act.on { background: var(--brk); color: #fff; border-color: var(--brk); }
@@ -244,7 +249,7 @@ nav.tabs svg { width: 22px; height: 22px; stroke: var(--muted); fill: none; stro
 </nav>
 <div class="toast" id="toast" hidden></div>
 <div class="blackout" id="blackout" hidden role="button" tabindex="0" aria-label="Screen hidden while driving. Press and hold to show it.">
-  <div class="bo-in"><span class="bo-dot"></span><span>Recording your drive</span><span class="bo-hint" id="boHint">Press and hold to show the screen</span></div>
+  <div class="bo-in"><span class="bo-dot"></span><span>Recording your drive</span><span class="bo-hint" id="boHint">Press and hold to show the screen</span><span class="bo-bar" aria-hidden="true"><i></i></span></div>
 </div>
 
 <script>
@@ -865,6 +870,7 @@ function setBlack(on) {
   const el = $("#blackout"); if (!el) return;
   el.hidden = !on; el.classList.remove("holding");
   clearTimeout(blackTimer);
+  if (on && state.active && !state.active.hidOnce) { state.active.hidOnce = true; store.saveActive(false); const n = document.querySelector(".act.nudge"); if (n) n.classList.remove("nudge"); }
   if (!on) scheduleBlack();
 }
 // Goes black after a quiet spell while driving; never while paused, finishing, confirming, or when the app is asking something.
@@ -879,9 +885,17 @@ function scheduleBlack(delay = 20000) {
 }
 (() => {
   const el = document.getElementById("blackout");
-  const start = (e) => { e.preventDefault(); el.classList.add("holding"); holdTimer = setTimeout(() => setBlack(false), 800); };
-  const stop = () => { clearTimeout(holdTimer); el.classList.remove("holding"); };
-  el.addEventListener("pointerdown", start); el.addEventListener("pointerup", stop); el.addEventListener("pointerleave", stop); el.addEventListener("pointercancel", stop);
+  // Touch events with preventDefault, so the browser's own long-press (text selection, menus) can't cancel the hold.
+  const start = (e) => {
+    if (e.cancelable) e.preventDefault();
+    if (holdTimer) return;
+    el.classList.add("holding");
+    holdTimer = setTimeout(() => { holdTimer = null; setBlack(false); }, 800);
+  };
+  const stop = () => { clearTimeout(holdTimer); holdTimer = null; el.classList.remove("holding"); };
+  el.addEventListener("touchstart", start, { passive: false });
+  el.addEventListener("touchend", stop); el.addEventListener("touchcancel", stop);
+  el.addEventListener("mousedown", start); el.addEventListener("mouseup", stop); el.addEventListener("mouseleave", stop);
   el.addEventListener("contextmenu", (e) => e.preventDefault());
   el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") setBlack(false); });
   // Any use of the visible screen restarts the countdown.
@@ -1306,7 +1320,7 @@ function renderDrive() {
       : `<button class="act" data-act="pause">${ICON.pause}Pause</button>
     <button class="act ${b ? "on" : ""}" data-act="break">${b ? `${ICON.wheel}Back on the road` : `<span class="ico-pair">${ICON.coffee}${ICON.walk}</span>Break`}</button>`}
     <button class="act" data-act="restart">${ICON.restart}Restart</button>
-    ${openPause() ? "" : `<button class="act" data-act="blackout">${ICON.eyeOff}Hide screen</button>`}
+    ${openPause() ? "" : `<button class="act ${a.hidOnce ? "" : "nudge"}" data-act="blackout">${ICON.eyeOff}Hide screen</button>`}
   </div>
   ${state.confirmRestart ? `<div class="confirm"><div>Restart this drive from now? The time, slow points and route so far are cleared. Where you're going and the car stay the same.</div><div class="btn-row"><button class="btn-danger" data-act="restart-yes">Restart drive</button><button data-act="restart-no">Keep going</button></div></div>` : ""}
   ${openPause() ? "" : `<section class="panel" style="gap:10px">
