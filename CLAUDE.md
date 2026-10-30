@@ -25,6 +25,7 @@ When changing the page, update both: push to GitHub and republish the artifact f
 - **Every time the user asks where or how to test, and after every change you ship**, end your reply with a table of test links:
   - Columns: link, what it is, best for, notes.
   - Include the GitHub Pages site, the Claude artifact and the repo.
+  - Always include a **latest-version** link to the Pages site with the live commit as a cache-buster, e.g. `https://stephenbeale.github.io/drive-log/?v=<short-sha>`, and a link to that commit (`https://github.com/stephenbeale/drive-log/commit/<short-sha>`).
   - Below the table, say which commit is live and whether the Pages deploy succeeded. Check the "pages build and deployment" workflow run.
   - Add a short "what to test" list covering the latest changes.
   - Add anything else needed to test, such as first-time setup or a cache refresh.
