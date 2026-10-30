@@ -21,7 +21,7 @@
 /* Layout: one narrow column like a dashboard-mounted phone; a motorway-sign panel for the live drive; bottom tab bar. */
 :root {
   --bg: #eceff3; --surface: #ffffff; --ink: #142030; --muted: #586677; --line: #d3dae3;
-  --sign: #1f4c8f; --sign-ink: #ffffff; --sign-line: rgba(255,255,255,.85);
+  --sign: #1f4c8f; --sign-text: #1f4c8f; --sign-ink: #ffffff; --sign-line: rgba(255,255,255,.85);
   --amber: #b97400; --amber-fill: #f2a516; --amber-soft: #fcefd3;
   --brk: #8a96a6; --good: #2d7a4c; --bad: #b8402b;
   --f-display: "Overpass", "Segoe UI", system-ui, sans-serif;
@@ -30,12 +30,12 @@
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #0e141b; --surface: #17202a; --ink: #e6ebf1; --muted: #93a0b0; --line: #29343f;
-  --sign: #2a5ca6; --sign-ink: #ffffff; --sign-line: rgba(255,255,255,.75);
+  --sign: #2a5ca6; --sign-text: #8db4ec; --sign-ink: #ffffff; --sign-line: rgba(255,255,255,.75);
   --amber: #f3b23f; --amber-fill: #e89d17; --amber-soft: #3a2b10;
   --brk: #5d6a79; --good: #5fbf86; --bad: #e57a62; color-scheme: dark; } }
 :root[data-theme="dark"] {
   --bg: #0e141b; --surface: #17202a; --ink: #e6ebf1; --muted: #93a0b0; --line: #29343f;
-  --sign: #2a5ca6; --sign-ink: #ffffff; --sign-line: rgba(255,255,255,.75);
+  --sign: #2a5ca6; --sign-text: #8db4ec; --sign-ink: #ffffff; --sign-line: rgba(255,255,255,.75);
   --amber: #f3b23f; --amber-fill: #e89d17; --amber-soft: #3a2b10;
   --brk: #5d6a79; --good: #5fbf86; --bad: #e57a62; color-scheme: dark; }
 
@@ -87,8 +87,9 @@ button:disabled { opacity: .5; cursor: default; }
 .ico { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .ico.solid { fill: currentColor; stroke: none; }
 .ico-pair { display: inline-flex; gap: 2px; }
-.end-row { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; }
-.actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: 8px; }
+.actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.act.finish { border: 2px solid var(--sign-text); color: var(--sign-text); }
+.act.danger { color: var(--bad); }
 /* Black screen while driving: pure black (near-off on OLED phones), deliberately hard to read. */
 .blackout { position: fixed; inset: 0; z-index: 50; background: #000; color: #3a3a3a; display: grid; place-items: center; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .bo-in { display: grid; justify-items: center; gap: 10px; font-size: .9rem; text-align: center; padding: 0 24px; }
@@ -1319,10 +1320,13 @@ function renderDrive() {
     ${openPause() ? `<button class="act primary" data-act="pause">${ICON.play}Resume</button>`
       : `<button class="act" data-act="pause">${ICON.pause}Pause</button>
     <button class="act ${b ? "on" : ""}" data-act="break">${b ? `${ICON.wheel}Back on the road` : `<span class="ico-pair">${ICON.coffee}${ICON.walk}</span>Break`}</button>`}
-    <button class="act" data-act="restart">${ICON.restart}Restart</button>
     ${openPause() ? "" : `<button class="act ${a.hidOnce ? "" : "nudge"}" data-act="blackout">${ICON.eyeOff}Hide screen</button>`}
+    <button class="act" data-act="restart">${ICON.restart}Restart</button>
+    <button class="act danger" data-act="discard">${ICON.bin}Discard</button>
+    <button class="act finish" data-act="end">${ICON.flag}Finish</button>
   </div>
   ${state.confirmRestart ? `<div class="confirm"><div>Restart this drive from now? The time, slow points and route so far are cleared. Where you're going and the car stay the same.</div><div class="btn-row"><button class="btn-danger" data-act="restart-yes">Restart drive</button><button data-act="restart-no">Keep going</button></div></div>` : ""}
+  ${state.confirmDiscard && !state.ending ? `<div class="confirm"><div>Discard this drive? The time, slow points and route won't be saved to your log.</div><div class="btn-row"><button class="btn-danger" data-act="discard-yes">Discard drive</button><button data-act="discard-no">Keep it</button></div></div>` : ""}
   ${openPause() ? "" : `<section class="panel" style="gap:10px">
     <div class="slow-row"><button class="btn-slow ${s ? "on" : ""}" data-act="slow">${ICON.tortoise}${s ? "Traffic's moving again" : "Log slow traffic"}</button>
     <span class="hint">${s ? "Pick what's holding you up." : state.gps === "on" ? "Usually spotted for you." : "For a passenger to log hold-ups."}</span></div>
@@ -1335,8 +1339,7 @@ function renderDrive() {
     ${state.gps === "on" && a.recordRoute ? `<div class="hint">Recording your route for the map.</div>` : ""}
     ${state.gps === "on" ? `<label style="display:flex;gap:8px;align-items:center;font-size:.85rem"><input type="checkbox" id="autoSlow" style="width:auto" ${a.autoSlow ? "checked" : ""}> Mark slow points automatically (under 12 mph for a minute)</label>` : ""}
   </section>
-  ${state.ending ? renderEndForm(a, st) : (state.confirmDiscard ? `<div class="confirm"><div>Discard this drive? The time, slow points and route won't be saved to your log.</div><div class="btn-row"><button class="btn-danger" data-act="discard-yes">Discard drive</button><button data-act="discard-no">Keep it</button></div></div>`
-    : `<div class="end-row"><button class="btn-primary btn-big btn-ico" data-act="end">${ICON.flag}Finish drive</button><button class="btn-big btn-ico btn-danger" data-act="discard">${ICON.bin}Discard</button></div>`)}`;
+  ${state.ending ? renderEndForm(a, st) : ""}`;
 }
 function renderEndForm(a, st) {
   return `<form id="endForm" class="panel">
