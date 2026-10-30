@@ -150,6 +150,11 @@ button:disabled { opacity: .5; cursor: default; }
 .hol-row { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 6px; align-items: center; font-size: .85rem; }
 .hol-row input { padding: 7px 8px; }
 
+.cars { display: grid; gap: 6px; }
+.car-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; text-align: left; font-weight: 400; background: var(--bg); }
+.car-row.on { border-color: var(--sign); box-shadow: inset 0 0 0 1px var(--sign); }
+.car-row .tag { margin-left: auto; }
+
 /* Log */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 460px) { .stats { grid-template-columns: 1fr 1fr; } }
@@ -189,7 +194,7 @@ button:disabled { opacity: .5; cursor: default; }
 
 /* Bottom nav */
 nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); }
-nav.tabs .in { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
+nav.tabs .in { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: repeat(5, 1fr); }
 nav.tabs button { border: 0; background: none; border-radius: 0; padding: 9px 4px 10px; display: grid; justify-items: center; gap: 2px; font-size: .74rem; color: var(--muted); font-weight: 600; }
 nav.tabs button[aria-current="page"] { color: var(--sign); }
 nav.tabs button[aria-current="page"] svg { stroke: var(--sign); }
@@ -213,7 +218,8 @@ nav.tabs svg { width: 22px; height: 22px; stroke: var(--muted); fill: none; stro
     <button data-tab="drive" aria-current="page"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 14.5V21M9.6 11.2 3.4 9.5M14.4 11.2l6.2-1.7"/></svg>Drive<span class="live-dot" id="liveDot" hidden></span></button>
     <button data-tab="log"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Log</button>
     <button data-tab="routes"><svg viewBox="0 0 24 24"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h7a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h7"/></svg>Routes</button>
-    <button data-tab="car"><svg viewBox="0 0 24 24"><path d="M5 17h14v-4.5l-2-5H7l-2 5V17Z"/><path d="M5 12.5h14"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg>Car</button>
+    <button data-tab="fuel"><svg viewBox="0 0 24 24"><path d="M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M4 21h12M7 8h6"/><path d="M15 10h2a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 0 3 0V8l-3-3"/></svg>Fuel</button>
+    <button data-tab="car"><svg viewBox="0 0 24 24"><path d="M5 17h14v-4.5l-2-5H7l-2 5V17Z"/><path d="M5 12.5h14"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg>Cars</button>
   </div>
 </nav>
 <div class="toast" id="toast" hidden></div>
@@ -230,11 +236,20 @@ const DEFAULT_HOLIDAYS = [["2026-07-22", "2026-09-02"], ["2026-10-26", "2026-10-
 const BANK_HOLIDAYS = new Set(["2025-01-01", "2025-04-18", "2025-04-21", "2025-05-05", "2025-05-26", "2025-08-25", "2025-12-25", "2025-12-26",
   "2026-01-01", "2026-04-03", "2026-04-06", "2026-05-04", "2026-05-25", "2026-08-31", "2026-12-25", "2026-12-28",
   "2027-01-01", "2027-03-26", "2027-03-29", "2027-05-03", "2027-05-31", "2027-08-30", "2027-12-27", "2027-12-28"]);
-const DEFAULT_CAR = { name: "My car", fuel: "Petrol", mpg: 45, ppl: 136.9, holidays: DEFAULT_HOLIDAYS };
+const FUELS = ["Petrol", "Diesel", "Hybrid", "LPG"];
+// Settings: every car, which one new drives use, and school holidays. Older saves held a single car's fields at the top level.
+function normaliseSettings(raw = {}) {
+  const st = { holidays: raw.holidays || DEFAULT_HOLIDAYS, currentCarId: raw.currentCarId, cars: Array.isArray(raw.cars) ? raw.cars.slice() : [] };
+  if (!st.cars.length) st.cars = [{ id: "car1", name: raw.name || "My car", fuel: raw.fuel || "Petrol", mpg: raw.mpg || 45, ppl: raw.ppl || 136.9 }];
+  if (!st.cars.some((c) => c.id === st.currentCarId)) st.currentCarId = st.cars[0].id;
+  return st;
+}
+const carById = (id) => state.car.cars.find((c) => c.id === id);
+const curCar = () => carById(state.car.currentCarId) || state.car.cars[0];
 
 const state = {
   tab: "drive", detailId: null, editing: false, confirmDel: false, confirmDiscard: false, ending: false,
-  car: { ...DEFAULT_CAR }, trips: [], active: null, mode: "loading",
+  car: normaliseSettings(), trips: [], fuel: [], fuelForm: null, editCarId: null, confirmCarDel: false, active: null, mode: "loading",
   gps: "off", gpsSpeed: null, routeFilter: null, shareTrim: true,
 };
 
@@ -272,7 +287,7 @@ function stats(t, now = Date.now()) {
   const moving = Math.max(0, total - brk);
   const miles = t.endedAt ? (t.distance || 0) : (t.gpsMiles || 0);
   const avg = miles && moving > 60000 ? miles / (moving / 3600000) : null;
-  const mpg = t.mpg ?? state.car.mpg, ppl = t.ppl ?? state.car.ppl;
+  const c = carById(t.carId) || curCar(), mpg = t.mpg ?? c.mpg, ppl = t.ppl ?? c.ppl;
   const litres = miles && mpg ? (miles / mpg) * LITRES_PER_UK_GALLON : null;
   const cost = litres != null && ppl ? (litres * ppl) / 100 : null;
   return { total, brk, slow, moving, miles, avg, litres, cost, end };
@@ -459,10 +474,33 @@ async function shrink(file) {
     return await new Promise((r) => c.toBlob((b) => r(b || file), "image/jpeg", 0.85));
   } catch { return file; }
 }
-async function readMileage(blob) {
-  const sample = await getSample(); if (!sample) return { value: null, why: "nosample" };
+// On the standalone site there's no Claude, so text is read on the phone with Tesseract (loaded on first use).
+let ocrP = null;
+function ocrText(blob) {
+  ocrP ??= new Promise((res, rej) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+    sc.onload = () => res(window.Tesseract); sc.onerror = () => { ocrP = null; rej(new Error("ocr")); };
+    document.head.appendChild(sc);
+  });
+  return ocrP.then((T) => T.recognize(blob, "eng")).then((r) => r.data.text || "");
+}
+async function canAskClaudeImages() {
+  const sample = await getSample(); if (!sample) return null;
   const lim = await sample.limits().catch(() => null);
-  if (!lim || !lim.images) return { value: null, why: "nosample" };
+  return lim && lim.images ? sample : null;
+}
+async function readMileage(blob) {
+  const sample = await canAskClaudeImages();
+  if (!sample) {
+    if (IN_CLAUDE) return { value: null, why: "nosample" };
+    try {
+      // Odometers are usually the longest number on the display.
+      const nums = (await ocrText(blob)).replace(/[,\s](?=\d{3}\b)/g, "").match(/\d{4,7}/g) || [];
+      const v = nums.map(Number).sort((a, b) => b - a)[0];
+      return v ? { value: v, unit: null, guess: true } : { value: null, why: "unreadable" };
+    } catch { return { value: null, why: "nosample" }; }
+  }
   try {
     const r = await sample.json(
       "This is a photo of a car's instrument cluster. Read the odometer, the car's total mileage, not a trip meter (often labelled TRIP A/B) and not the range. " +
@@ -473,6 +511,8 @@ async function readMileage(blob) {
   } catch (e) { return { value: null, why: e && e.code === "not_granted" ? "nosample" : "unreadable" }; }
 }
 async function handlePhoto(which, file) {
+  if (which === "receipt") return handleReceipt(file);
+  if (which === "fuelOdo") return handleFuelOdo(file);
   const status = document.getElementById(which === "start" ? "photoStart" : "photoEnd");
   const input = document.getElementById(which === "start" ? (state.active ? "odoStartE" : "odoStart") : "odoEnd");
   const tripId = state.active && state.active.id;
@@ -493,8 +533,8 @@ async function handlePhoto(which, file) {
   } else state.endPhoto = photoId;
   const live = document.getElementById(input ? input.id : "");
   if (read.value && live) { live.value = read.value; fillDistanceFromMileage(); }
-  if (read.value) show(`Read ${read.value.toLocaleString()} ${read.unit === "km" ? "km" : "miles"}. Correct it if that's wrong.`);
-  else if (read.why === "nosample") show(`${photoId ? "Photo saved. " : ""}Type the mileage from the photo. Reading it automatically needs this page open in Claude.`, true);
+  if (read.value) show(read.guess ? `Read ${read.value.toLocaleString()}. Reading dashboards on the phone is hit and miss, so check it.` : `Read ${read.value.toLocaleString()} ${read.unit === "km" ? "km" : "miles"}. Correct it if that's wrong.`);
+  else if (read.why === "nosample") show(`${photoId ? "Photo saved. " : ""}Type the mileage from the photo. It couldn't be read automatically here.`, true);
   else show("Couldn't read the mileage clearly. Type it in, or take a sharper photo.", true);
 }
 function fillDistanceFromMileage() {
@@ -502,6 +542,154 @@ function fillDistanceFromMileage() {
   if (d && s > 0 && e > s && (!d.value || d.dataset.auto === "1")) { d.value = (Math.round((e - s) * 10) / 10).toString(); d.dataset.auto = "1"; }
 }
 const photoBtn = (which) => `<label class="btn-photo"><input type="file" accept="image/*" capture="environment" data-photo="${which}" hidden><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4V8Z"/><circle cx="12" cy="13.2" r="3.4"/></svg>Photo</label>`;
+
+/* ---------- fuel ---------- */
+const BRANDS = ["BP", "Shell", "Esso", "Tesco", "Sainsbury's", "Asda", "Morrisons", "Texaco", "Jet", "Gulf", "Murco", "Applegreen", "MFG", "Costco", "Co-op", "Harvest", "Rontec", "Moto", "Welcome Break", "Roadchef"];
+function parseReceipt(raw) {
+  const t = raw.replace(/(\d),(\d)/g, "$1.$2"), n = parseFloat, out = {};
+  let m = t.match(/(\d{1,3}\.\d{2,3})\s*(?:L|LT|LTR|LTRS|LITRES?)\b/i) || t.match(/(?:LITRES?|LTRS?|VOLUME|QTY|QUANTITY)\D{0,14}(\d{1,3}\.\d{2,3})/i);
+  if (m) out.litres = n(m[1]);
+  m = t.match(/(\d{3}\.\d)\s*(?:P\b|PPL|P\s*\/\s*L)/i) || t.match(/(?:PPL|PRICE\s*\/\s*L(?:TR|ITRE)?|P\s*\/\s*L)\D{0,10}(\d{3}\.\d)/i);
+  if (m) out.ppl = n(m[1]);
+  else if ((m = t.match(/£?\s*([12]\.\d{3})\s*(?:\/|PER)\s*(?:L|LTR|LITRE)/i))) out.ppl = Math.round(n(m[1]) * 1000) / 10;
+  else if ((m = t.match(/(?:PRICE|PPL|P\/L)[^\n\d]{0,14}£?\s*([12]\.\d{3})\b/i))) out.ppl = Math.round(n(m[1]) * 1000) / 10;
+  const totals = [...t.matchAll(/(?:TOTAL|AMOUNT|SALE|BALANCE|DUE|PAID|CARD)[^\n\d]{0,24}£?\s*(\d{1,4}\.\d{2})\b/gi)].map((x) => n(x[1]));
+  const pounds = [...t.matchAll(/£\s*(\d{1,4}\.\d{2})\b/g)].map((x) => n(x[1]));
+  if (totals.length || pounds.length) out.total = Math.max(...(totals.length ? totals : pounds));
+  if ((m = t.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2}|\d{4})\b/))) {
+    const y = +m[3] < 100 ? 2000 + +m[3] : +m[3], mo = +m[2], d = +m[1];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) out.date = `${y}-${pad(mo)}-${pad(d)}`;
+  }
+  const brand = BRANDS.find((b) => new RegExp("\\b" + b.replace(/[^A-Za-z ]/g, ".?") + "\\b", "i").test(t));
+  if (brand) out.station = brand;
+  return out;
+}
+async function readReceipt(blob) {
+  const sample = await canAskClaudeImages();
+  if (sample) {
+    try {
+      const r = await sample.json(
+        "This is a photo of a UK fuel receipt. Read the fuel purchase. " +
+        'Reply with JSON only: {"date": "YYYY-MM-DD" or null, "litres": number or null, "total": total paid for the fuel in pounds as a number or null, ' +
+        '"pricePerLitre": price in pence per litre as a number (e.g. 142.9) or null, "station": brand or station name or null, "fuelType": "Petrol" | "Diesel" | null}. ' +
+        "Use null for anything you can't read clearly. Ignore non-fuel items such as snacks.",
+        { images: [blob], modelTier: "default" });
+      return { litres: +r.litres || null, total: +r.total || null, ppl: +r.pricePerLitre || null, date: r.date || null, station: r.station || null, by: "claude" };
+    } catch (e) { if (e && e.code === "not_granted") return null; return { by: "claude" }; }
+  }
+  if (IN_CLAUDE) return null;
+  try { return { ...parseReceipt(await ocrText(blob)), by: "ocr" }; } catch { return null; }
+}
+// Fill in whichever of litres, total and price is missing from the other two.
+function completeFill(f) {
+  if (f.litres && f.total && !f.ppl) f.ppl = Math.round((f.total / f.litres) * 1000) / 10;
+  else if (f.litres && f.ppl && !f.total) f.total = Math.round(f.litres * f.ppl) / 100;
+  else if (f.total && f.ppl && !f.litres) f.litres = Math.round((f.total * 100 / f.ppl) * 100) / 100;
+  return f;
+}
+async function handleReceipt(file) {
+  const status = $("#receiptStatus"); if (!status) return;
+  const blob = await shrink(file), url = URL.createObjectURL(blob);
+  const show = (text, warn) => { status.innerHTML = `<img class="thumb" src="${url}" alt="Receipt photo"><span class="${warn ? "hint warn" : ""}">${esc(text)}</span>`; };
+  show(IN_CLAUDE ? "Reading the receipt…" : "Reading the receipt on your phone. The first time takes a little longer…");
+  const assets = await getAssets();
+  const [up, r] = await Promise.all([assets ? assets.upload(blob).catch(() => null) : null, readReceipt(blob)]);
+  if (state.fuelForm) state.fuelForm.photo = up ? up.id : state.fuelForm.photo || null;
+  const f = $("#fuelForm"); if (!f) return;
+  const got = r ? completeFill({ litres: r.litres, total: r.total, ppl: r.ppl }) : {};
+  if (got.litres) f.litres.value = got.litres;
+  if (got.total) f.total.value = got.total.toFixed(2);
+  if (got.ppl) f.ppl.value = got.ppl;
+  if (r && r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) f.date.value = r.date;
+  if (r && r.station && !f.station.value) f.station.value = r.station;
+  const found = ["litres", "total", "ppl"].filter((k) => got[k]).length;
+  if (!r) show("Couldn't read receipts here. Type the details in.", true);
+  else if (found === 3) show(r.by === "ocr" ? "Filled in from the receipt. Phone text reading can slip, so check the numbers." : "Filled in from the receipt. Check the numbers before saving.");
+  else if (found) show("Read part of the receipt. Fill in the rest.", true);
+  else show("Couldn't read the receipt clearly. Type the details, or try a flatter, brighter photo.", true);
+}
+async function handleFuelOdo(file) {
+  const status = $("#fuelOdoStatus"); if (!status) return;
+  const blob = await shrink(file), url = URL.createObjectURL(blob);
+  status.innerHTML = `<img class="thumb" src="${url}" alt="Mileage photo"><span>Reading the mileage…</span>`;
+  const r = await readMileage(blob), input = $("#fMileage");
+  if (r.value && input) input.value = r.value;
+  status.querySelector("span").textContent = r.value ? `Read ${r.value.toLocaleString()}. Check it.` : "Couldn't read the mileage. Type it in.";
+}
+// Real MPG from brim-to-brim fills: miles between two full tanks divided by the fuel added after the first.
+function fuelStats(carId) {
+  const fills = state.fuel.filter((x) => x.carId === carId).sort((a, b) => (a.mileage || 0) - (b.mileage || 0) || a.at - b.at);
+  const perFill = {}; let miles = 0, litres = 0, prev = null, since = 0;
+  for (const x of fills) {
+    if (!x.mileage) { since += x.litres || 0; continue; }
+    since += x.litres || 0;
+    if (x.full !== false) {
+      if (prev && x.mileage > prev.mileage && since > 0) { const mi = x.mileage - prev.mileage; perFill[x.id] = mi / (since / LITRES_PER_UK_GALLON); miles += mi; litres += since; }
+      prev = x; since = 0;
+    }
+  }
+  const now = new Date(), monthSpend = sum(fills.filter((x) => { const d = new Date(x.at); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }), (x) => x.total || 0);
+  const latest = fills.slice().sort((a, b) => b.at - a.at)[0];
+  return { fills, perFill, mpg: litres ? miles / (litres / LITRES_PER_UK_GALLON) : null, monthSpend, latest, total: sum(fills, (x) => x.total || 0) };
+}
+function carChips(selectedId, act) {
+  if (state.car.cars.length < 2) return "";
+  return `<div class="chips">${state.car.cars.map((c) => `<button type="button" class="chip ${c.id === selectedId ? "on" : ""}" data-act="${act}" data-id="${esc(c.id)}">${esc(c.name)}</button>`).join("")}</div>`;
+}
+function renderFuel() {
+  const carId = state.fuelCarId && carById(state.fuelCarId) ? state.fuelCarId : state.car.currentCarId, car = carById(carId);
+  const fs = fuelStats(carId);
+  if (state.fuelForm) return renderFuelForm(car);
+  const perMile = fs.mpg && fs.latest && fs.latest.ppl ? (LITRES_PER_UK_GALLON / fs.mpg) * fs.latest.ppl : null;
+  return `<section class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><h2>${esc(car.name)}</h2><span class="muted" style="font-size:.85rem">${esc(car.fuel)}</span></div>
+    ${carChips(carId, "fuel-car")}
+    <div class="stats">
+      <div class="stat"><span class="label">Real MPG</span><span class="v">${fs.mpg ? fs.mpg.toFixed(1) : "–"}</span></div>
+      <div class="stat"><span class="label">This month</span><span class="v">${fmtMoney(fs.monthSpend)}</span></div>
+      <div class="stat"><span class="label">Last price</span><span class="v">${fs.latest && fs.latest.ppl ? fs.latest.ppl.toFixed(1) + "p" : "–"}</span></div>
+      <div class="stat"><span class="label">Per mile</span><span class="v">${perMile ? perMile.toFixed(1) + "p" : "–"}</span></div>
+    </div>
+    ${fs.mpg && Math.abs(fs.mpg - car.mpg) >= 1 ? `<div class="confirm" style="background:var(--bg);border-color:var(--line)"><div>Your fill-ups show <b>${fs.mpg.toFixed(1)} mpg</b>, but fuel costs for drives are worked out at ${car.mpg} mpg.</div><button data-act="use-mpg" data-mpg="${fs.mpg.toFixed(1)}" data-id="${esc(carId)}">Use ${fs.mpg.toFixed(1)} mpg from now on</button></div>`
+      : !fs.mpg ? `<div class="hint">Real MPG appears after two fill-ups with a full tank and the mileage noted.</div>` : ""}
+    <button class="btn-primary btn-big" data-act="fuel-add">Add a fill-up</button>
+  </section>
+  <section class="panel" style="gap:0">
+    ${fs.fills.length ? fs.fills.slice().sort((a, b) => b.at - a.at).map((x) => `<button class="trip" data-act="fuel-open" data-id="${esc(x.id)}">
+      <div class="trip-head"><span class="trip-route">${esc(x.station || "Fill-up")} ${x.full === false ? '<span class="tag">Part fill</span>' : ""}</span><span class="trip-dur">${fmtMoney(x.total)}</span></div>
+      <div class="trip-meta"><span>${fmtDate(x.at)}</span>${x.litres ? `<span class="num">${x.litres.toFixed(2)} L</span>` : ""}${x.ppl ? `<span class="num">${x.ppl.toFixed(1)}p/L</span>` : ""}${x.mileage ? `<span class="num">${Number(x.mileage).toLocaleString()} mi</span>` : ""}${fs.perFill[x.id] ? `<span class="num" style="color:var(--good)">${fs.perFill[x.id].toFixed(1)} mpg</span>` : ""}${x.photo ? "<span>Receipt</span>" : ""}</div>
+    </button>`).join("")
+    : `<div class="empty"><div><b style="color:var(--ink)">No fill-ups yet</b><br>Add one each time you fill up, ideally with a photo of the receipt. Fill to the brim and note the mileage, and your real MPG is worked out for you.</div></div>`}
+  </section>`;
+}
+function renderFuelForm(car) {
+  const x = state.fuelForm, isNew = !x.id;
+  return `<button class="btn-ghost" data-act="fuel-cancel" style="justify-self:start">← Fuel</button>
+  <form id="fuelForm" class="panel">
+    <h2>${isNew ? "Add a fill-up" : "Edit fill-up"}</h2>
+    ${state.car.cars.length > 1 ? `<div class="field"><label for="fCar">Car</label><select id="fCar" name="carId">${state.car.cars.map((c) => `<option value="${esc(c.id)}" ${c.id === (x.carId || car.id) ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></div>` : ""}
+    <div class="field"><span class="label">Receipt</span>
+      <div class="inline">${photoBtn("receipt").replace(">Photo<", ">Photograph the receipt<")}</div>
+      <div class="photo-status" id="receiptStatus">${x.photo ? `<img class="thumb" src="/_blob/${esc(x.photo)}" alt="Receipt photo"><span>Receipt saved</span>` : ""}</div>
+      ${isNew ? `<div class="hint">${IN_CLAUDE ? "Claude reads the litres, price and total from the photo." : "Your phone reads the litres, price and total from the photo. Check them before saving."}</div>` : ""}
+    </div>
+    <div class="row">
+      <div class="field"><label for="fDate">Date</label><input id="fDate" name="date" type="date" required value="${isoDay(x.at || Date.now())}"></div>
+      <div class="field"><label for="fStation">Where</label><input id="fStation" name="station" list="stationList" placeholder="e.g. Tesco Extra" value="${esc(x.station || "")}"><datalist id="stationList">${[...new Set(state.fuel.map((y) => y.station).filter(Boolean))].slice(0, 20).map((v) => `<option value="${esc(v)}">`).join("")}</datalist></div>
+    </div>
+    <div class="row3">
+      <div class="field"><label for="fLitres">Litres</label><input id="fLitres" name="litres" type="number" inputmode="decimal" step="0.01" min="0" value="${x.litres ?? ""}"></div>
+      <div class="field"><label for="fPpl">Pence / litre</label><input id="fPpl" name="ppl" type="number" inputmode="decimal" step="0.1" min="0" value="${x.ppl ?? ""}"></div>
+      <div class="field"><label for="fTotal">Total £</label><input id="fTotal" name="total" type="number" inputmode="decimal" step="0.01" min="0" value="${x.total != null ? x.total.toFixed(2) : ""}"></div>
+    </div>
+    <div class="hint">Any two of these is enough. The third is worked out.</div>
+    <div class="field"><label for="fMileage">Mileage</label><div class="inline"><input id="fMileage" name="mileage" type="number" inputmode="decimal" step="1" placeholder="e.g. 48233" value="${x.mileage ?? ""}">${photoBtn("fuelOdo")}</div><div class="photo-status" id="fuelOdoStatus"></div></div>
+    <label class="check"><input type="checkbox" name="full" ${x.full === false ? "" : "checked"}><span>Filled to the brim<br><span class="hint">Needed for working out real MPG.</span></span></label>
+    <button class="btn-primary btn-big" type="submit">${isNew ? "Save fill-up" : "Save changes"}</button>
+    ${isNew ? "" : state.confirmFuelDel ? `<div class="confirm"><div>Delete this fill-up? This can't be undone.</div><div class="btn-row"><button type="button" class="btn-danger" data-act="fuel-del-yes">Delete fill-up</button><button type="button" data-act="fuel-del-no">Keep it</button></div></div>` : `<button type="button" class="btn-ghost btn-danger" data-act="fuel-del">Delete fill-up</button>`}
+  </form>
+  ${x.photo && !isNew ? `<section class="panel"><img src="/_blob/${esc(x.photo)}" alt="Receipt" style="border-radius:6px"></section>` : ""}`;
+}
 
 /* ---------- storage: cloud (db, private per person) with a local fallback ---------- */
 const store = {
@@ -513,6 +701,7 @@ const store = {
   },
   base() { return "data/users/" + this.uid; },
   tripsCol() { return this.db.doc(this.base() + "/car").collection("trips"); },
+  fuelCol() { return this.db.doc(this.base() + "/car").collection("fuel"); },
   async init() {
     state.active = this.local.get("active", null);
     const use = window.claude && window.claude.use ? (n) => window.claude.use(n).catch(() => null) : async () => null;
@@ -524,7 +713,7 @@ const store = {
       this.db = db; this.uid = id; state.mode = "cloud";
       try {
         const car = await db.doc(this.base() + "/car").get();
-        if (car.exists) state.car = { ...DEFAULT_CAR, ...car.data() };
+        state.car = normaliseSettings(car.exists ? car.data() : {});
         if (!state.active) {
           const act = await db.doc(this.base() + "/active").get();
           if (act.exists && act.data().trip) { state.active = act.data().trip; this.local.set("active", state.active); }
@@ -534,13 +723,15 @@ const store = {
         (snap) => { state.trips = snap.docs.map((d) => ({ ...d.data(), id: d.id })); softRender(); },
         () => { state.mode = "local"; this.loadLocal(); render(); }
       );
+      this.fuelCol().orderBy("at", "desc").limit(1000).onSnapshot(
+        (snap) => { state.fuel = snap.docs.map((d) => ({ ...d.data(), id: d.id })); softRender(); }, () => {});
     } else {
       state.mode = "local"; this.loadLocal();
     }
     if (state.active) resumeActive();
     render();
   },
-  loadLocal() { state.car = { ...DEFAULT_CAR, ...this.local.get("car", {}) }; state.trips = this.local.get("trips", []).sort((a, b) => b.startedAt - a.startedAt); },
+  loadLocal() { state.car = normaliseSettings(this.local.get("car", {})); state.fuel = this.local.get("fuel", []).sort((a, b) => b.at - a.at); state.trips = this.local.get("trips", []).sort((a, b) => b.startedAt - a.startedAt); },
   async saveCar(car) {
     state.car = car;
     if (state.mode === "cloud") { try { await this.db.doc(this.base() + "/car").set(car); } catch (e) { toast("Couldn't save the car settings. Check your connection and try again."); } }
@@ -563,6 +754,20 @@ const store = {
     state.trips = state.trips.filter((t) => t.id !== id);
     if (state.mode !== "cloud") this.local.set("trips", state.trips);
   },
+  async saveFill(fill) {
+    const { id, ...body } = fill;
+    if (state.mode === "cloud") { try { await this.fuelCol().doc(id).set(body); } catch { toast("Couldn't save that fill-up. Check your connection and try again."); return false; } }
+    const i = state.fuel.findIndex((x) => x.id === id);
+    if (i >= 0) state.fuel[i] = fill; else state.fuel.push(fill);
+    state.fuel.sort((a, b) => b.at - a.at);
+    if (state.mode !== "cloud") this.local.set("fuel", state.fuel);
+    return true;
+  },
+  async deleteFill(id) {
+    if (state.mode === "cloud") { try { await this.fuelCol().doc(id).delete(); } catch { toast("Couldn't delete that fill-up."); return; } }
+    state.fuel = state.fuel.filter((x) => x.id !== id);
+    if (state.mode !== "cloud") this.local.set("fuel", state.fuel);
+  },
   // Active drive: local copy on every change; cloud copy on events only (start, slow, break), so a reload mid-drive resumes.
   saveActive(cloud = true) {
     if (state.active) this.local.set("active", state.active); else this.local.del("active");
@@ -579,7 +784,7 @@ const openSlow = () => state.active && state.active.slow.find((s) => !s.end);
 const openBreak = () => state.active && state.active.breaks.find((b) => !b.end);
 
 function startDrive(from, to, odoStart) {
-  state.active = { id: uid(), from, to, startedAt: Date.now(), slow: [], breaks: [], gpsMiles: 0, odoStart: odoStart || null, autoSlow: true, kind: state.kind || null, recordRoute: document.getElementById("recordRoute") ? document.getElementById("recordRoute").checked : true, track: [], startPhoto: state.pendingStartPhoto || null, fromCoords: state.fromCoords || null };
+  state.active = { id: uid(), from, to, startedAt: Date.now(), slow: [], breaks: [], gpsMiles: 0, odoStart: odoStart || null, autoSlow: true, carId: state.car.currentCarId, kind: state.kind || null, recordRoute: document.getElementById("recordRoute") ? document.getElementById("recordRoute").checked : true, track: [], startPhoto: state.pendingStartPhoto || null, fromCoords: state.fromCoords || null };
   state.pendingStartPhoto = null; state.fromCoords = null; state.kind = null;
   const e = expectFor(routeKey(state.active), state.active.startedAt);
   if (e) state.active.expect = { ms: e.ms, text: expectText(e) };
@@ -827,7 +1032,7 @@ async function finishDrive(form) {
     gpsMiles: Math.round((a.gpsMiles || 0) * 10) / 10,
     odoStart: odoStart || null, odoEnd: odoEnd || null,
     slow: a.slow.filter((s) => s.end - s.start >= 5000), breaks: a.breaks.filter((b) => b.end - b.start >= 5000),
-    notes: form.notes.value.trim(), mpg: state.car.mpg, ppl: state.car.ppl, car: state.car.name,
+    notes: form.notes.value.trim(), ...(() => { const c = carById(a.carId) || curCar(); return { carId: c.id, car: c.name, mpg: c.mpg, ppl: c.ppl }; })(),
     startPhoto: a.startPhoto || null, endPhoto: state.endPhoto || null,
     kind: a.kind || null,
     track: a.recordRoute && a.track && a.track.length > 1 ? a.track : null,
@@ -893,6 +1098,7 @@ function renderDrive() {
           <div class="field"><label for="to">To</label><input id="to" name="to" list="placesList" placeholder="Where to?" autocomplete="off"></div>
         </div>
         <div class="hint" id="expectMsg"></div>
+        ${state.car.cars.length > 1 ? `<div class="field"><span class="label">Car</span>${carChips(state.car.currentCarId, "pick-car")}</div>` : ""}
         <div class="field"><label for="kindText">What's this drive for? (optional)</label>
           <div class="chips" id="kindChips">${allKinds().map((k) => `<button type="button" class="chip ${state.kind === k ? "on" : ""}" data-act="kind" data-k="${esc(k)}">${esc(k)}</button>`).join("")}</div>
           <input id="kindText" name="kind" maxlength="40" autocomplete="off" placeholder="Or type your own, e.g. Tennis or Music lesson" value="${esc(state.kind || "")}">
@@ -923,6 +1129,7 @@ function renderDrive() {
       <div class="sign-route"><span>${esc(a.from || "Start")}</span><span class="arrow">→</span><span>${esc(a.to || "Somewhere")}</span></div>
       ${status}
       <div class="clock" id="liveClock">${fmtClock(st.total)}</div>
+      ${state.car.cars.length > 1 && carById(a.carId) ? `<div class="sign-eta">${esc(carById(a.carId).name)}</div>` : ""}
       ${a.expect ? `<div class="sign-eta">${esc(a.expect.text)} · arrive about <b class="num">${fmtTime(a.startedAt + a.expect.ms + st.brk)}</b></div>` : ""}
       <div class="sign-stats">
         <span><span class="label">Moving</span> <b id="liveMoving">${fmtDur(st.moving)}</b></span>
@@ -973,7 +1180,7 @@ function monthTotals() {
 function tripRow(t) {
   const st = stats(t);
   return `<button class="trip" data-act="open" data-id="${esc(t.id)}">
-    <div class="trip-head"><span class="trip-route">${esc(routeName(t))} ${t.kind ? `<span class="tag">${esc(t.kind)}</span>` : ""} ${t.sample ? '<span class="tag">Sample</span>' : ""}</span><span class="trip-dur">${fmtDur(st.moving)}</span></div>
+    <div class="trip-head"><span class="trip-route">${esc(routeName(t))} ${t.kind ? `<span class="tag">${esc(t.kind)}</span>` : ""} ${state.car.cars.length > 1 && t.car ? `<span class="tag">${esc(t.car)}</span>` : ""} ${t.sample ? '<span class="tag">Sample</span>' : ""}</span><span class="trip-dur">${fmtDur(st.moving)}</span></div>
     <div class="tl" aria-hidden="true">${timelineInner(t, st)}</div>
     <div class="trip-meta"><span>${fmtDate(t.startedAt)} · ${fmtTime(t.startedAt)}</span><span class="num">${fmtMi(st.miles)}</span>${st.avg ? `<span class="num">${Math.round(st.avg)} mph avg</span>` : ""}${st.slow > 30000 ? `<span class="slow">${fmtDur(st.slow)} slow</span>` : ""}<span class="num">${fmtMoney(st.cost)}</span></div>
   </button>`;
@@ -1101,17 +1308,24 @@ function renderRoutes() {
 
 const holRow = ([a, b]) => `<div class="hol-row"><input type="date" name="holStart" value="${esc(a)}" aria-label="Holiday starts"><span class="muted">to</span><input type="date" name="holEnd" value="${esc(b)}" aria-label="Holiday ends"><button type="button" class="btn-ghost" data-act="hol-del" aria-label="Remove this holiday">✕</button></div>`;
 function renderCar() {
-  const c = state.car;
+  const editId = state.editCarId === "new" ? "new" : carById(state.editCarId) ? state.editCarId : state.car.currentCarId;
+  const c = editId === "new" ? { id: "new", name: "", fuel: "Petrol", mpg: 45, ppl: curCar().ppl } : carById(editId);
   const perMile = c.mpg && c.ppl ? (LITRES_PER_UK_GALLON / c.mpg) * c.ppl : null;
-  return `<form id="carForm" class="panel">
-    <h2>Your car</h2>
+  return `<section class="panel" style="gap:10px">
+    <h2>Your cars</h2>
+    <div class="cars">${state.car.cars.map((x) => `<button class="car-row ${x.id === editId ? "on" : ""}" data-act="car-edit" data-id="${esc(x.id)}"><b>${esc(x.name)}</b><span class="muted">${esc(x.fuel)} · ${x.mpg} mpg</span>${x.id === state.car.currentCarId ? '<span class="tag">Default</span>' : ""}</button>`).join("")}</div>
+    <button data-act="car-new" style="justify-self:start">Add a car</button>
+  </section>
+  <form id="carForm" class="panel">
+    <h2>${c.id === "new" ? "New car" : "Edit " + esc(c.name)}</h2>
+    <input type="hidden" name="carId" value="${esc(c.id)}">
     <div class="field"><label for="carName">Name</label><input id="carName" name="name" value="${esc(c.name)}" placeholder="e.g. Golf 1.5 TSI"></div>
     <div class="row3">
-      <div class="field"><label for="carFuel">Fuel</label><select id="carFuel" name="fuel">${["Petrol", "Diesel", "Hybrid", "LPG"].map((f) => `<option ${c.fuel === f ? "selected" : ""}>${f}</option>`).join("")}</select></div>
+      <div class="field"><label for="carFuel">Fuel</label><select id="carFuel" name="fuel">${FUELS.map((f) => `<option ${c.fuel === f ? "selected" : ""}>${f}</option>`).join("")}</select></div>
       <div class="field"><label for="carMpg">MPG (UK)</label><input id="carMpg" name="mpg" type="number" step="0.1" min="1" required value="${c.mpg}"></div>
       <div class="field"><label for="carPpl">Pence / litre</label><input id="carPpl" name="ppl" type="number" step="0.1" min="1" required value="${c.ppl}"></div>
     </div>
-    <div class="muted" style="font-size:.85rem">Use the real-world MPG from your trip computer rather than the brochure figure. Update the price when you fill up. Saved drives keep the price they were logged with.</div>
+    <div class="muted" style="font-size:.85rem">Use the real-world MPG from your trip computer, or let the Fuel tab measure it from your fill-ups. The price updates itself when you add a fill-up. Saved drives keep the price they were logged with.</div>
     <div class="panel" style="background:var(--bg)">
       <div class="stats" style="grid-template-columns:repeat(3,1fr)">
         <div class="stat"><span class="label">Per mile</span><span class="v">${perMile ? perMile.toFixed(1) + "p" : "–"}</span></div>
@@ -1119,12 +1333,17 @@ function renderCar() {
         <div class="stat"><span class="label">L / 100 km</span><span class="v">${c.mpg ? (282.481 / c.mpg).toFixed(1) : "–"}</span></div>
       </div>
     </div>
+    ${c.id !== "new" && c.id !== state.car.currentCarId ? `<label class="check"><input type="checkbox" name="makeDefault"><span>Use this car for new drives</span></label>` : ""}
+    <button class="btn-primary btn-big" type="submit">${c.id === "new" ? "Add car" : "Save car"}</button>
+    ${c.id !== "new" && state.car.cars.length > 1 ? (state.confirmCarDel ? `<div class="confirm"><div>Remove ${esc(c.name)}? Drives and fill-ups already logged with it stay in your log.</div><div class="btn-row"><button type="button" class="btn-danger" data-act="car-del-yes">Remove car</button><button type="button" data-act="car-del-no">Keep it</button></div></div>` : `<button type="button" class="btn-ghost btn-danger" data-act="car-del">Remove this car</button>`) : ""}
+  </form>
+  <form id="holForm" class="panel">
     <div class="field"><span class="label">School holidays</span>
       <div class="hint">Used to compare drives in term time and the holidays. These are typical dates for England, so edit them to match your council. Bank holidays are built in.</div>
-      <div id="holList" style="display:grid;gap:6px">${(c.holidays || []).map(holRow).join("")}</div>
+      <div id="holList" style="display:grid;gap:6px">${(state.car.holidays || []).map(holRow).join("")}</div>
       <button type="button" data-act="hol-add" style="justify-self:start">Add a holiday</button>
     </div>
-    <button class="btn-primary btn-big" type="submit">Save car</button>
+    <button type="submit">Save holidays</button>
   </form>
   <section class="panel" style="gap:8px">
     <h2>Where your drives are kept</h2>
@@ -1146,7 +1365,7 @@ function render() {
   $("#liveDot").hidden = !state.active;
   const v = $("#view");
   v.style.display = "grid"; v.style.gap = "14px";
-  v.innerHTML = state.tab === "drive" ? renderDrive() : state.tab === "log" ? renderLog() : state.tab === "routes" ? renderRoutes() : renderCar();
+  v.innerHTML = state.tab === "drive" ? renderDrive() : state.tab === "log" ? renderLog() : state.tab === "routes" ? renderRoutes() : state.tab === "fuel" ? renderFuel() : renderCar();
   if (state.tab === "drive" && !state.active) updateExpect();
 }
 
@@ -1157,7 +1376,7 @@ async function addSamples() {
     const d = new Date(base.getTime() - daysAgo * day); d.setHours(hh, mm, 0, 0); const s = d.getTime();
     return { id: "sample-" + daysAgo, sample: true, from, to, startedAt: s, endedAt: s + mins * 60000, distance: miles, distanceSource: "manual",
       slow: slow.map(([at, len, reason]) => ({ start: s + at * 60000, end: s + (at + len) * 60000, reason, auto: false, lat: null, lon: null })),
-      breaks: [], notes, kind, mpg: state.car.mpg, ppl: state.car.ppl, car: state.car.name };
+      breaks: [], notes, kind, carId: curCar().id, mpg: curCar().mpg, ppl: curCar().ppl, car: curCar().name };
   };
   const samples = [
     mk(1, 38, 21.6, "Home", "Office", [[9, 7, "Traffic"], [27, 3, "Roadworks"]], "Sample drive. Queue at the ring road roundabout.", "Commute"),
@@ -1186,7 +1405,7 @@ async function exportCsv() {
 /* ---------- events ---------- */
 document.addEventListener("click", async (e) => {
   const tabBtn = e.target.closest("[data-tab]");
-  if (tabBtn) { state.tab = tabBtn.dataset.tab; state.detailId = null; state.editing = state.confirmDel = false; render(); window.scrollTo(0, 0); return; }
+  if (tabBtn) { state.tab = tabBtn.dataset.tab; state.detailId = null; state.editing = state.confirmDel = false; state.fuelForm = null; render(); window.scrollTo(0, 0); return; }
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act;
   switch (act) {
@@ -1230,6 +1449,23 @@ document.addEventListener("click", async (e) => {
     case "samples": el.disabled = true; await addSamples(); break;
     case "clear-samples": for (const t of state.trips.filter((x) => x.sample)) await store.deleteTrip(t.id); render(); toast("Sample drives removed"); break;
     case "export": exportCsv(); break;
+    case "pick-car": state.car.currentCarId = el.dataset.id; store.saveCar({ ...state.car }); document.querySelectorAll('[data-act="pick-car"]').forEach((c) => c.classList.toggle("on", c.dataset.id === el.dataset.id)); break;
+    case "car-edit": state.editCarId = el.dataset.id; state.confirmCarDel = false; render(); break;
+    case "car-new": state.editCarId = "new"; state.confirmCarDel = false; render(); $("#carName")?.focus(); break;
+    case "car-del": state.confirmCarDel = true; render(); break;
+    case "car-del-no": state.confirmCarDel = false; render(); break;
+    case "car-del-yes": { const id = state.editCarId && carById(state.editCarId) ? state.editCarId : state.car.currentCarId, cars = state.car.cars.filter((c) => c.id !== id);
+      await store.saveCar({ ...state.car, cars, currentCarId: state.car.currentCarId === id ? cars[0].id : state.car.currentCarId }); state.editCarId = null; state.confirmCarDel = false; render(); toast("Car removed"); break; }
+    case "fuel-car": state.fuelCarId = el.dataset.id; render(); break;
+    case "fuel-add": state.fuelForm = { carId: state.fuelCarId || state.car.currentCarId }; state.confirmFuelDel = false; render(); window.scrollTo(0, 0); break;
+    case "fuel-open": state.fuelForm = { ...state.fuel.find((x) => x.id === el.dataset.id) }; state.confirmFuelDel = false; render(); window.scrollTo(0, 0); break;
+    case "fuel-cancel": state.fuelForm = null; render(); break;
+    case "fuel-del": state.confirmFuelDel = true; render(); break;
+    case "fuel-del-no": state.confirmFuelDel = false; render(); break;
+    case "fuel-del-yes": { const x = state.fuelForm, as = await getAssets(); if (as && x.photo) as.delete(x.photo).catch(() => {});
+      await store.deleteFill(x.id); state.fuelForm = null; state.confirmFuelDel = false; render(); toast("Fill-up deleted"); break; }
+    case "use-mpg": { const id = el.dataset.id, mpg = parseFloat(el.dataset.mpg);
+      await store.saveCar({ ...state.car, cars: state.car.cars.map((c) => (c.id === id ? { ...c, mpg } : c)) }); render(); toast(`Fuel costs now use ${mpg} mpg`); break; }
     case "share-png": sharePng(state.trips.find((x) => x.id === state.detailId)); break;
     case "share-json": shareJson(state.trips.find((x) => x.id === state.detailId)); break;
     case "share-link": { const link = mapsLink(state.trips.find((x) => x.id === state.detailId)), msg = $("#shareMsg"); if (!link) break;
@@ -1263,10 +1499,29 @@ document.addEventListener("submit", async (e) => {
     await finishDrive(f);
     const b = f.querySelector('[type="submit"]'); if (b) b.disabled = false;
   } else if (f.id === "carForm") {
+    const id = f.carId.value === "new" ? uid() : f.carId.value;
+    const car = { id, name: f.name.value.trim() || "My car", fuel: f.fuel.value, mpg: parseFloat(f.mpg.value), ppl: parseFloat(f.ppl.value) };
+    const cars = state.car.cars.some((x) => x.id === id) ? state.car.cars.map((x) => (x.id === id ? car : x)) : [...state.car.cars, car];
+    const makeDefault = f.carId.value === "new" ? false : f.makeDefault && f.makeDefault.checked;
+    await store.saveCar({ ...state.car, cars, currentCarId: makeDefault ? id : state.car.currentCarId });
+    state.editCarId = id; render(); toast(f.carId.value === "new" ? "Car added" : "Car saved");
+  } else if (f.id === "holForm") {
     const hs = [...f.querySelectorAll('[name="holStart"]')], he = [...f.querySelectorAll('[name="holEnd"]')];
     const holidays = hs.map((x, i) => [x.value, he[i].value || x.value]).filter(([a]) => a).map(([a, b]) => (a <= b ? [a, b] : [b, a])).sort();
-    await store.saveCar({ name: f.name.value.trim() || "My car", fuel: f.fuel.value, mpg: parseFloat(f.mpg.value), ppl: parseFloat(f.ppl.value), holidays });
-    render(); toast("Car saved");
+    await store.saveCar({ ...state.car, holidays }); render(); toast("Holidays saved");
+  } else if (f.id === "fuelForm") {
+    const x = state.fuelForm, carId = f.carId ? f.carId.value : (state.fuelCarId && carById(state.fuelCarId) ? state.fuelCarId : state.car.currentCarId);
+    const num = (v) => (parseFloat(v) > 0 ? parseFloat(v) : null);
+    const d = new Date(f.date.value + "T12:00"), at = isNaN(d) ? Date.now() : (isoDay(Date.now()) === f.date.value ? Date.now() : d.getTime());
+    const fill = completeFill({ id: x.id || uid(), carId, at, station: f.station.value.trim(), litres: num(f.litres.value), ppl: num(f.ppl.value), total: num(f.total.value), mileage: num(f.mileage.value), full: f.full.checked, photo: x.photo || null });
+    if (!fill.litres && !fill.total) { toast("Add the litres or the total so this fill-up counts."); return; }
+    if (!(await store.saveFill(fill))) return;
+    const car = carById(carId), newest = state.fuel.filter((y) => y.carId === carId).sort((a, b) => b.at - a.at)[0];
+    if (car && fill.ppl && newest && newest.id === fill.id && Math.abs(car.ppl - fill.ppl) >= 0.1) {
+      await store.saveCar({ ...state.car, cars: state.car.cars.map((c) => (c.id === carId ? { ...c, ppl: fill.ppl } : c)) });
+      toast(`Saved. Fuel estimates now use ${fill.ppl.toFixed(1)}p a litre.`);
+    } else toast("Fill-up saved");
+    state.fuelForm = null; render();
   } else if (f.id === "editForm") {
     const t = state.trips.find((x) => x.id === state.detailId);
     const keep = new Set([...f.querySelectorAll('input[name="keep"]:checked')].map((x) => +x.value));

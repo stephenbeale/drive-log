@@ -10,8 +10,9 @@ Time your drives, see where you got held up, and know what each journey costs in
 - **Hands-free while you drive.** With location on, it tracks distance and speed and spots slow traffic by itself. Stop for a while and it offers a break. Stop near your destination and it offers to end the journey. A break ends by itself when you drive off.
 - **Route map.** Records the path you drove. Sharing it (an image, a GeoJSON file or a Google Maps link) can hide the mile around the start and finish, plus postcodes and times, so the route doesn't reveal where you live or work.
 - **Insights per route.** Typical, quickest and slowest times, broken down by the time you set off, the day of the week, and term time versus school and bank holidays.
-- **Fuel cost.** From your car's real-world MPG and the price per litre.
-- **Mileage.** Type it in, or take a photo of the dashboard (reading the photo automatically only works in the Claude-hosted version).
+- **Several cars.** Pick the car when you start a drive. Each one has its own MPG and fuel price.
+- **Fuel tracking.** Photograph the receipt at each fill-up and the litres, price and total are filled in for you. Fill to the brim and note the mileage, and it works out your real MPG and cost per mile. Your latest price feeds straight into the fuel cost of each drive.
+- **Photos instead of typing.** Dashboard mileage and fuel receipts can be photographed. On this site the text is read on your phone (Tesseract), so check the numbers. In the Claude-hosted version, Claude reads them.
 
 Never use the phone while driving. Set the drive up before you go, leave the phone in its mount, and add anything you missed once you've parked.
 
