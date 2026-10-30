@@ -1160,14 +1160,24 @@ function fold(key, title, body, dflt = true) {
 const waLink = (text) => "https://wa.me/?text=" + encodeURIComponent(text);
 const smsLink = (text) => "sms:?&body=" + encodeURIComponent(text);
 const mailLink = (subject, text) => "mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(text);
-function sendRow(text, subject) {
+function sendRow(text, subject, live = false) {
+  const d = live ? " data-eta" : "";
   return `<div class="send-row">
-    <a class="btn-link btn-wa" href="${esc(waLink(text))}" target="_blank" rel="noopener">WhatsApp</a>
-    <a class="btn-link" href="${esc(smsLink(text))}">${ICON.chat}Text</a>
-    <a class="btn-link" href="${esc(mailLink(subject, text))}">${ICON.mail}Email</a>
-    ${navigator.share && !IN_CLAUDE ? `<button class="btn-link" data-act="share-text" data-text="${esc(text)}" data-subject="${esc(subject)}">${ICON.share}More</button>` : ""}
+    <a class="btn-link btn-wa" href="${esc(waLink(text))}" target="_blank" rel="noopener" data-ch="wa"${d}>WhatsApp</a>
+    <a class="btn-link" href="${esc(smsLink(text))}" data-ch="sms"${d}>${ICON.chat}Text</a>
+    <a class="btn-link" href="${esc(mailLink(subject, text))}" data-ch="mail" data-subject="${esc(subject)}"${d}>${ICON.mail}Email</a>
+    ${navigator.share && !IN_CLAUDE ? `<button class="btn-link" data-act="share-text" data-text="${esc(text)}" data-subject="${esc(subject)}"${d}>${ICON.share}More</button>` : ""}
   </div>`;
 }
+// The ETA changes as you drive, so its links are rebuilt when tapped, just before the browser follows them.
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-eta]"); if (!el || !state.active) return;
+  const text = etaShareText(state.active);
+  if (el.dataset.ch === "wa") el.href = waLink(text);
+  else if (el.dataset.ch === "sms") el.href = smsLink(text);
+  else if (el.dataset.ch === "mail") el.href = mailLink(el.dataset.subject, text);
+  else el.dataset.text = text;
+}, true);
 const canShareFiles = () => { try { return !IN_CLAUDE && !!navigator.canShare && navigator.canShare({ files: [new File([""], "x.png", { type: "image/png" })] }); } catch { return false; } };
 function tripShareText(t) {
   const st = stats(t), lines = [sharedName(t)];
@@ -1180,11 +1190,25 @@ function tripShareText(t) {
   if (link) lines.push("Route: " + link);
   return lines.join("\n");
 }
+// Your usual average speed across past drives (median), or 28 mph until there are a few.
+function typicalMph() {
+  const v = state.trips.map((t) => stats(t).avg).filter((x) => x > 5 && x < 90);
+  return v.length >= 3 ? median(v) : 28;
+}
+const roundTo5 = (ms) => Math.round(ms / 300000) * 300000;
+// Rough ETA for a destination with no history: distance still to go (straight line × 1.3 for roads) at your usual speed.
+function roughEta(a) {
+  if (!a.destCoords || a.lastLat == null) return null;
+  const miles = haversineMiles({ lat: a.lastLat, lon: a.lastLon }, a.destCoords) * 1.3;
+  return { miles, at: roundTo5(Date.now() + (miles / typicalMph()) * 3600000) };
+}
 function etaShareText(a) {
-  const to = stripPostcodes(a.to || "") || "my destination";
-  if (!a.expect) return `On my way to ${to}. Set off at ${fmtTime(a.startedAt)}.`;
-  const st = stats(a);
-  return `On my way to ${to}. Should be there about ${fmtTime(a.startedAt + a.expect.ms + st.brk)} (it usually takes ${fmtDur(a.expect.ms)}).`;
+  const to = stripPostcodes(a.to || "");
+  if (!to) return `On my way. Set off at ${fmtTime(a.startedAt)}.`;
+  if (a.expect) return `On my way to ${to}. Should be there about ${fmtTime(a.startedAt + a.expect.ms + stats(a).brk)} (it usually takes ${fmtDur(a.expect.ms)}).`;
+  const r = roughEta(a);
+  if (r) return r.miles < 0.5 ? `Nearly at ${to}.` : `On my way to ${to}. Should be there about ${fmtTime(r.at)}, with roughly ${Math.max(1, Math.round(r.miles))} miles to go.`;
+  return `On my way to ${to}. Set off at ${fmtTime(a.startedAt)}.`;
 }
 function renderShare(t) {
   const hasRoute = t.track && t.track.length > 1;
@@ -1469,7 +1493,7 @@ ${ask ? `<section class="panel ask">
         if (a.carId === OTHER_CAR) return `<div class="sign-eta">${OTHER_NAME}</div>`;
         if (v && v.plate) return `<div class="sign-plate">${plateHtml(v)}</div>`;
         return state.car.cars.length > 1 && v ? `<div class="sign-eta">${esc(v.name)}</div>` : ""; })()}
-      ${a.expect ? `<div class="sign-eta">${esc(a.expect.text)} · arrive about <b class="num">${fmtTime(a.startedAt + a.expect.ms + st.brk)}</b></div>` : ""}
+      ${a.expect ? `<div class="sign-eta">${esc(a.expect.text)} · arrive about <b class="num">${fmtTime(a.startedAt + a.expect.ms + st.brk)}</b></div>`  : (() => { const r = a.to ? roughEta(a) : null; return r && r.miles >= 0.5 ? `<div class="sign-eta">About ${Math.round(r.miles)} mi to go · arrive about <b class="num">${fmtTime(r.at)}</b></div>` : ""; })()}
       <div class="sign-stats">
         <span><span class="label">Moving</span> <b id="liveMoving">${fmtDur(st.moving)}</b></span>
         <span><span class="label">Slow</span> <b id="liveSlow">${fmtDur(st.slow)}</b></span>
@@ -1481,7 +1505,7 @@ ${ask ? `<section class="panel ask">
   </section>
   ${renderOffer(a)}
   <span class="label">For a passenger, or once you're parked</span>
-  <div class="field"><span class="label">Send my ETA</span>${sendRow(etaShareText(a), "On my way")}</div>
+  <div class="field"><span class="label">Send my ETA</span>${sendRow(etaShareText(a), "On my way", true)}</div>
   <div class="actions">
     ${openPause() ? `<button class="act primary" data-act="pause">${ICON.play}Resume</button>`
       : `<button class="act" data-act="pause">${ICON.pause}Pause</button>
