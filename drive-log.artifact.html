@@ -167,6 +167,15 @@ button:disabled { opacity: .5; cursor: default; }
 
 .clock.paused { opacity: .55; }
 
+.go { display: grid; gap: 10px; justify-items: center; text-align: center; padding-block: 8px; }
+.btn-go { width: 100%; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 30px 16px; border-radius: 14px; font-size: 1.4rem; font-weight: 800; font-family: var(--f-display); background: var(--sign); color: var(--sign-ink); border: 0; }
+.btn-go .ico { width: 30px; height: 30px; }
+details.more > summary { cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::after { content: "+"; font-size: 1.3rem; color: var(--muted); }
+details.more[open] > summary::after { content: "–"; }
+.tidy { border: 2px solid var(--sign-text); }
+
 /* Log */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 460px) { .stats { grid-template-columns: 1fr 1fr; } }
@@ -851,7 +860,7 @@ const openPause = () => state.active && (state.active.pauses || []).find((p) => 
 function startDrive(from, to, odoStart) {
   state.active = { id: uid(), from, to, startedAt: Date.now(), slow: [], breaks: [], gpsMiles: 0, odoStart: odoStart || null, autoSlow: true, carId: state.driveCarId || state.car.currentCarId, kind: state.kind || null, recordRoute: document.getElementById("recordRoute") ? document.getElementById("recordRoute").checked : true, track: [], startPhoto: state.pendingStartPhoto || null, fromCoords: state.fromCoords || null };
   state.pendingStartPhoto = null; state.fromCoords = null; state.kind = null; state.driveCarId = null;
-  const e = expectFor(routeKey(state.active), state.active.startedAt);
+  const e = state.active.to ? expectFor(routeKey(state.active), state.active.startedAt) : null;
   if (e) state.active.expect = { ms: e.ms, text: expectText(e) };
   store.saveActive();
   resumeActive();
@@ -961,6 +970,10 @@ function onPos(p) {
     } else if (mph == null && dt > 0) mph = d / (dt / 3600);
   }
   lastPos = here; a.lastLat = lat; a.lastLon = lon;
+  if (!a.from && !a.fromNaming) {
+    a.fromNaming = true; a.fromCoords ??= { lat, lon };
+    placeName({ lat, lon }).then((n) => { if (n && state.active === a && !a.from) { a.from = n; store.saveActive(); softRender(); } });
+  }
   if (a.recordRoute) recordPoint(a, here);
   state.gpsSpeed = mph;
   if (mph != null && a.autoSlow && !openBreak()) autoSlow(mph, here.t);
@@ -1211,23 +1224,24 @@ function setReason(r) {
   const a = state.active; const s = openSlow() || a.slow[a.slow.length - 1]; if (!s) return;
   s.reason = s.reason === r ? null : r; store.saveActive(); render();
 }
-async function finishDrive(form) {
+async function finishDrive(form = null) {
+  const val = (n) => (form && form[n] ? form[n].value : "");
   const a = state.active, now = a.arrivedAt || Date.now();
   a.slow = a.slow.filter((s) => s.start < now); a.breaks = a.breaks.filter((b) => b.start < now);
   a.slow.forEach((s) => { if (!s.end || s.end > now) s.end = now; });
   a.breaks.forEach((b) => { if (!b.end || b.end > now) b.end = now; });
   a.pauses = (a.pauses || []).filter((p) => p.start < now); a.pauses.forEach((p) => { if (!p.end || p.end > now) p.end = now; });
-  const odoEnd = parseFloat(form.odoEnd.value), odoStart = parseFloat(form.odoStart.value);
-  let distance = parseFloat(form.distance.value);
+  const odoEnd = parseFloat(val("odoEnd")), odoStart = parseFloat(val("odoStart")) || a.odoStart || NaN;
+  let distance = form ? parseFloat(val("distance")) : Math.round((a.gpsMiles || 0) * 10) / 10;
   if (!(distance > 0) && odoEnd > odoStart) distance = odoEnd - odoStart;
   const trip = {
     id: a.id, from: a.from, to: a.to, startedAt: a.startedAt, endedAt: now,
     distance: distance > 0 ? Math.round(distance * 10) / 10 : 0,
-    distanceSource: parseFloat(form.distance.value) > 0 ? (Math.abs(distance - (a.gpsMiles || 0)) < 0.15 && a.gpsMiles ? "gps" : "manual") : (odoEnd > odoStart ? "odometer" : "none"),
+    distanceSource: !form ? (distance > 0 ? "gps" : "none") : parseFloat(val("distance")) > 0 ? (Math.abs(distance - (a.gpsMiles || 0)) < 0.15 && a.gpsMiles ? "gps" : "manual") : (odoEnd > odoStart ? "odometer" : "none"),
     gpsMiles: Math.round((a.gpsMiles || 0) * 10) / 10,
     odoStart: odoStart || null, odoEnd: odoEnd || null,
     slow: a.slow.filter((s) => s.end - s.start >= 5000), gaps: (a.gaps || []).filter((g) => g.start < now), breaks: a.breaks.filter((b) => b.end - b.start >= 5000), pauses: a.pauses.filter((p) => p.end - p.start >= 5000),
-    notes: form.notes.value.trim(), ...(() => { if (a.carId === OTHER_CAR) return { carId: OTHER_CAR, car: OTHER_NAME, mpg: null, ppl: null }; const c = carById(a.carId) || curCar(); return { carId: c.id, car: c.name, mpg: c.mpg, ppl: c.ppl }; })(),
+    notes: val("notes").trim(), ...(() => { if (a.carId === OTHER_CAR) return { carId: OTHER_CAR, car: OTHER_NAME, mpg: null, ppl: null }; const c = carById(a.carId) || curCar(); return { carId: c.id, car: c.name, mpg: c.mpg, ppl: c.ppl }; })(),
     startPhoto: a.startPhoto || null, endPhoto: state.endPhoto || null,
     kind: a.kind || null,
     track: a.recordRoute && a.track && a.track.length > 1 ? a.track : null,
@@ -1236,8 +1250,18 @@ async function finishDrive(form) {
   const ok = await store.saveTrip(trip);
   if (!ok) return;
   stopLive(); state.active = null; state.ending = false; state.endPhoto = null; store.saveActive();
-  state.tab = "log"; state.detailId = trip.id; render();
+  state.tab = "log"; state.detailId = trip.id; state.tidyId = trip.id; state.tidyDraft = {}; render();
   toast("Drive saved");
+  // Name where the drive started and ended, if it isn't known yet, so tidying up is mostly confirming.
+  const nameEnd = async (field, coords) => {
+    if (trip[field] || !coords) return;
+    const n = await placeName(coords); const t = state.trips.find((x) => x.id === trip.id);
+    if (!n || !t || t[field]) return;
+    const input = document.getElementById(field === "to" ? "tTo" : "tFrom");
+    if (input && !input.value) input.value = n;
+    await store.saveTrip({ ...t, [field]: n });
+  };
+  nameEnd("from", trip.fromCoords); nameEnd("to", trip.endCoords);
 }
 function discardDrive() { stopLive(); state.active = null; state.ending = false; state.confirmDiscard = false; store.saveActive(); render(); toast("Drive discarded"); }
 
@@ -1280,16 +1304,20 @@ function renderDrive() {
   if (!a) {
     const last = state.trips[0];
     const regs = regulars();
-    return `${regs.length ? `<section class="panel">
-      <h2>Regular journeys</h2>
+    return `<section class="go">
+      <button class="btn-go" data-act="go">${ICON.play}<span>Start driving</span></button>
+      <div class="hint">Starts from where you are. Add where you went and what it was for when you finish.</div>
+    </section>
+    ${regs.length ? `<section class="panel">
+      <span class="label">Or start a regular journey</span>
       <div class="journeys">${regs.map((r) => `<button class="journey" data-act="quick" data-from="${esc(r.from)}" data-to="${esc(r.to)}" data-kind="${esc(r.kind || "")}"><b>${esc(r.kind || r.to || r.name)}</b><span>${esc(r.name)}</span>${r.expect ? `<span class="num">${esc(expectText(r.expect).replace(/ \(.*$/, ""))}</span>` : ""}</button>`).join("")}</div>
-      <div class="hint">One press starts the drive. Do it before you set off.</div>
     </section>` : ""}
-    <section class="panel">
-      <h2>Start a drive</h2>
+    <details class="panel more" id="moreOpts" ${state.moreOpen ? "open" : ""}>
+      <summary>More options</summary>
+      <div class="hint">Set a destination to get an arrival time and an offer to end the journey when you get there. Everything else can wait until afterwards.</div>
       <form id="startForm" class="panel" style="padding:0;border:0;gap:12px">
         <div class="ft">
-          <div class="field"><label for="from">From</label><input id="from" name="from" list="placesList" placeholder="Home" autocomplete="off" value="${esc(last ? last.to : "")}"></div>
+          <div class="field"><label for="from">From</label><input id="from" name="from" list="placesList" placeholder="Where you are" autocomplete="off" value=""></div>
           <button type="button" class="btn-icon" data-act="swap" aria-label="Swap from and to">⇄</button>
           <div class="field"><label for="to">To</label><input id="to" name="to" list="placesList" placeholder="Where to?" autocomplete="off"></div>
         </div>
@@ -1305,25 +1333,17 @@ function renderDrive() {
         <datalist id="placesList">${places()}</datalist>
         <label class="check"><input type="checkbox" id="blackPref" ${prefBlack() ? "checked" : ""}><span>Black screen while driving<br><span class="hint">Hides everything, including the clock, about 10 seconds after you start. Recording carries on. Press and hold to bring it back.</span></span></label>
         <label class="check"><input type="checkbox" id="recordRoute" checked><span>Record my route for a map<br><span class="hint">Your route stays private in your log. You choose what to share later.</span></span></label>
-        <button class="btn-primary btn-big" type="submit">Start drive</button>
+        <button class="btn-primary btn-big" type="submit">Start drive with these details</button>
       </form>
-    </section>
-    <section class="panel">
-      <h2>How it works</h2>
-      <div class="muted" style="display:grid;gap:6px">
-        <div>Start the drive before you set off, then leave the phone in its mount. The clock keeps running if you switch apps or reload the page.</div>
-        <div>With location on, slow traffic, long stops and your arrival are spotted for you. Once you've stopped, it offers to log a break or end the journey. Breaks don't count as driving time.</div>
-        <div><b>Never use the phone while you're driving.</b> A passenger can log slow points and their causes, or you can add them after the drive.</div>
-        <div>Finish with the distance, or snap the mileage on the dashboard at the start and end, and the fuel cost is worked out from your car's MPG.</div>
-      </div>
-    </section>`;
+    </details>
+    <div class="hint" style="text-align:center">Start before you set off, then leave the phone in its mount and keep it unlocked.</div>`;
   }
   const st = stats(a), s = openSlow(), b = openBreak();
   const lastSlow = s || a.slow[a.slow.length - 1];
   const status = openPause() ? `<span class="state-chip brk">Paused</span>` : s ? `<span class="state-chip slow">Slow for <span id="slowFor" class="num">${fmtDur(Date.now() - s.start)}</span></span>` : b ? `<span class="state-chip brk">On a break</span>` : `<span class="state-chip">Driving</span>`;
   return `<section class="sign" aria-label="Current drive">
     <div class="sign-in">
-      <div class="sign-route"><span>${esc(a.from || "Start")}</span><span class="arrow">→</span><span>${esc(a.to || "Somewhere")}</span></div>
+      <div class="sign-route">${a.to ? `<span>${esc(a.from || "Here")}</span><span class="arrow">→</span><span>${esc(a.to)}</span>` : `<span>${a.from ? "From " + esc(a.from) : state.gps === "waiting" ? "Finding where you are…" : "On the road"}</span>`}</div>
       ${status}
       <div class="clock ${openPause() ? "paused" : ""}" id="liveClock">${fmtClock(st.total - st.paused)}</div>
       ${a.carId === OTHER_CAR ? `<div class="sign-eta">${OTHER_NAME}</div>` : state.car.cars.length > 1 && carById(a.carId) ? `<div class="sign-eta">${esc(carById(a.carId).name)}</div>` : ""}
@@ -1429,6 +1449,7 @@ function renderDetail() {
   const cmp = avgOther ? st.moving - avgOther : null;
   if (state.editing) return renderEdit(t);
   return `<button class="btn-ghost" data-act="back" style="justify-self:start">← All drives</button>
+  ${state.tidyId === t.id ? renderTidy(t) : ""}
   <section class="panel">
     <div style="display:grid;gap:4px"><span class="label">${fmtDate(t.startedAt)} · ${fmtTime(t.startedAt)}–${fmtTime(t.endedAt)}${t.sample ? " · Sample" : ""}</span><h2 style="font-size:1.35rem">${esc(routeName(t))}</h2></div>
     <div class="stats">
@@ -1456,6 +1477,24 @@ function renderDetail() {
   </section>
   ${state.confirmDel ? `<div class="confirm"><div>Delete this drive from your log? This can't be undone.</div><div class="btn-row"><button class="btn-danger" data-act="del-yes">Delete drive</button><button data-act="del-no">Keep it</button></div></div>`
     : `<div class="btn-row"><button data-act="edit">Edit or add slow points</button><button data-act="again">Drive this route again</button><button class="btn-danger" data-act="del">Delete</button></div>`}`;
+}
+function renderTidy(t) {
+  const d = state.tidyDraft || {}, v = (k) => (d[k] !== undefined ? d[k] : t[k] || "");
+  const carId = d.carId || t.carId || state.car.currentCarId, kind = v("kind");
+  return `<form id="tidyForm" class="panel tidy">
+    <h2>Drive saved. What was it?</h2>
+    <div class="row">
+      <div class="field"><label for="tFrom">From</label><input id="tFrom" list="placesList3" autocomplete="off" placeholder="e.g. Home" value="${esc(v("from"))}"></div>
+      <div class="field"><label for="tTo">To</label><input id="tTo" list="placesList3" autocomplete="off" placeholder="Where did you go?" value="${esc(v("to"))}"></div>
+    </div>
+    <datalist id="placesList3">${places()}</datalist>
+    <div class="field"><label for="tKind">What was it for?</label>
+      <div class="chips">${allKinds().map((k) => `<button type="button" class="chip ${kind.toLowerCase() === k.toLowerCase() ? "on" : ""}" data-act="tkind" data-k="${esc(k)}">${esc(k)}</button>`).join("")}</div>
+      <input id="tKind" maxlength="40" autocomplete="off" placeholder="Or type your own" value="${esc(kind)}">
+    </div>
+    <div class="field"><span class="label">Car</span>${carChips(carId, "tcar", true)}</div>
+    <div class="btn-row"><button class="btn-primary" type="submit">Save</button><button type="button" data-act="tidy-skip">Skip</button></div>
+  </form>`;
 }
 function renderEdit(t) {
   return `<button class="btn-ghost" data-act="cancel-edit" style="justify-self:start">← Back</button>
@@ -1625,7 +1664,7 @@ async function exportCsv() {
 /* ---------- events ---------- */
 document.addEventListener("click", async (e) => {
   const tabBtn = e.target.closest("[data-tab]");
-  if (tabBtn) { state.tab = tabBtn.dataset.tab; state.detailId = null; state.editing = state.confirmDel = false; state.fuelForm = null; render(); window.scrollTo(0, 0); return; }
+  if (tabBtn) { state.tab = tabBtn.dataset.tab; state.detailId = null; state.tidyId = null; state.editing = state.confirmDel = false; state.fuelForm = null; render(); window.scrollTo(0, 0); return; }
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act;
   switch (act) {
@@ -1648,7 +1687,12 @@ document.addEventListener("click", async (e) => {
     case "restart-no": state.confirmRestart = false; render(); break;
     case "restart-yes": restartDrive(); break;
     case "reason": setReason(el.dataset.r); break;
-    case "end": state.ending = true; render(); $("#distance")?.focus(); break;
+    case "end": finishDrive(); break;
+    case "go": if (!state.active) { state.kind = null; startDrive("", "", null); } break;
+    case "tkind": { const i = $("#tKind"); i.value = i.value.trim().toLowerCase() === el.dataset.k.toLowerCase() ? "" : el.dataset.k; state.tidyDraft.kind = i.value;
+      document.querySelectorAll('[data-act="tkind"]').forEach((c) => c.classList.toggle("on", c.dataset.k.toLowerCase() === i.value.toLowerCase())); break; }
+    case "tcar": state.tidyDraft.carId = el.dataset.id; document.querySelectorAll('[data-act="tcar"]').forEach((c) => c.classList.toggle("on", c.dataset.id === el.dataset.id)); break;
+    case "tidy-skip": state.tidyId = null; render(); break;
     case "end-cancel": state.ending = false; if (state.active) { delete state.active.arrivedAt; store.saveActive(false); } render(); break;
     case "offer-end": state.active.arrivedAt = state.offerSince; state.offer = null; state.dismissed = "arrive"; state.ending = true; store.saveActive(false); render(); break;
     case "offer-break": { const a = state.active, at = state.offerSince;
@@ -1659,7 +1703,7 @@ document.addEventListener("click", async (e) => {
     case "discard-no": state.confirmDiscard = false; render(); break;
     case "discard-yes": discardDrive(); break;
     case "open": state.detailId = el.dataset.id; state.confirmDel = state.editing = false; render(); window.scrollTo(0, 0); break;
-    case "back": state.detailId = null; render(); break;
+    case "back": state.detailId = null; state.tidyId = null; render(); break;
     case "edit": state.editing = true; render(); break;
     case "cancel-edit": state.editing = false; render(); break;
     case "del": state.confirmDel = true; render(); break;
@@ -1704,7 +1748,9 @@ document.addEventListener("click", async (e) => {
       navigator.clipboard.writeText(link).then(() => toast("Link copied"), () => { const i = msg.querySelector("input"); i.focus(); i.select(); }); break; }
   }
 });
+document.addEventListener("toggle", (e) => { if (e.target.id === "moreOpts") state.moreOpen = e.target.open; }, true);
 document.addEventListener("input", (e) => {
+  if (state.tidyDraft && ["tFrom", "tTo", "tKind"].includes(e.target.id)) state.tidyDraft[{ tFrom: "from", tTo: "to", tKind: "kind" }[e.target.id]] = e.target.value;
   if (e.target.id === "from" || e.target.id === "to") updateExpect();
   if (e.target.id === "kindText") { state.kind = e.target.value.trim() || null; kindChipsOn(); }
 });
@@ -1714,6 +1760,7 @@ document.addEventListener("change", (e) => {
   if (t.id === "from" || t.id === "to") nameField(t, $("#hereMsg")).then(updateExpect);
   if (t.id === "odoStartE" || t.id === "odoEnd") fillDistanceFromMileage();
   if (t.id === "distance") t.dataset.auto = "";
+  if (t.id === "moreOpts") return;
   if (t.id === "blackPref") { store.local.set("black", t.checked); return; }
   if (t.id === "shareTrim") { state.shareTrim = t.checked; render(); return; }
   if (t.id === "autoSlow" && state.active) { state.active.autoSlow = t.checked; store.saveActive(); }
@@ -1754,6 +1801,13 @@ document.addEventListener("submit", async (e) => {
       toast(`Saved. Fuel estimates now use ${fill.ppl.toFixed(1)}p a litre.`);
     } else toast("Fill-up saved");
     state.fuelForm = null; render();
+  } else if (f.id === "tidyForm") {
+    const t = state.trips.find((x) => x.id === state.tidyId); if (!t) return;
+    const carId = state.tidyDraft.carId || t.carId || state.car.currentCarId;
+    const carBits = carId === OTHER_CAR ? { carId, car: OTHER_NAME, mpg: null, ppl: null }
+      : carId !== t.carId ? (() => { const c = carById(carId) || curCar(); return { carId: c.id, car: c.name, mpg: c.mpg, ppl: c.ppl }; })() : {};
+    const upd = { ...t, ...carBits, from: $("#tFrom").value.trim(), to: $("#tTo").value.trim(), kind: $("#tKind").value.trim().slice(0, 40) || null };
+    if (await store.saveTrip(upd)) { state.tidyId = null; state.tidyDraft = {}; render(); toast("Drive updated"); }
   } else if (f.id === "editForm") {
     const t = state.trips.find((x) => x.id === state.detailId);
     const keep = new Set([...f.querySelectorAll('input[name="keep"]:checked')].map((x) => +x.value));
